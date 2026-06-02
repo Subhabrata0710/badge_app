@@ -987,6 +987,12 @@
                     <option value="grouped">All fronts, then all backs</option>
                     <option value="interleave">Front, back, front, back…</option>
                 </select>
+                <label class="fld">Output quality</label>
+                <select id="quality">
+                    <option value="300">300 DPI — print (recommended)</option>
+                    <option value="450">450 DPI — ultra (larger file)</option>
+                    <option value="200">200 DPI — draft (smaller file)</option>
+                </select>
                 <div class="twocol" style="margin-top:11px">
                     <label
                         style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer">
@@ -1110,7 +1116,7 @@
             text = (text || '').toString();
             if (_qrcache[text]) return _qrcache[text];
             const d = document.createElement('div'); d.style.display = 'none'; document.body.appendChild(d);
-            new QRCode(d, { text: text || ' ', width: 300, height: 300, correctLevel: QRCode.CorrectLevel.M });
+            new QRCode(d, { text: text || ' ', width: 600, height: 600, correctLevel: QRCode.CorrectLevel.M });
             const cv = d.querySelector('canvas');
             const url = cv ? cv.toDataURL('image/png') : (d.querySelector('img')?.src || '');
             document.body.removeChild(d);
@@ -1123,8 +1129,8 @@
             if (!text) text = '0';
             if (_bcache[text]) return _bcache[text];
             const cv = document.createElement('canvas');
-            try { JsBarcode(cv, text, { format: 'CODE128', displayValue: false, margin: 0, height: 80, width: 2 }); }
-            catch (e) { JsBarcode(cv, '0', { format: 'CODE128', displayValue: false, margin: 0, height: 80, width: 2 }); }
+            try { JsBarcode(cv, text, { format: 'CODE128', displayValue: false, margin: 0, height: 160, width: 3 }); }
+            catch (e) { JsBarcode(cv, '0', { format: 'CODE128', displayValue: false, margin: 0, height: 160, width: 3 }); }
             const url = cv.toDataURL('image/png'); _bcache[text] = url; return url;
         }
 
@@ -1151,13 +1157,21 @@
         });
 
         const A6_RATIO = A6.w / A6.h; // 0.709
+        // tolerance for treating uploaded art as "A6 ratio". 5% absorbs tiny
+        // rounding/bleed differences from real-world A6 exports so 3×3 still works.
+        const A6_TOL = 0.05;
+        function isA6Ratio(dims) {
+            if (!dims) return true;
+            const r = dims.w / dims.h;
+            return Math.abs(r - A6_RATIO) / A6_RATIO < A6_TOL;
+        }
         function updateRatioWarn() {
             const d = state.side === 'front' ? state.frontDims : state.backDims;
             const el = $('#ratioWarn');
             if (!d) { el.innerHTML = ''; return; }
             const r = d.w / d.h;
             const off = Math.abs(r - A6_RATIO) / A6_RATIO;
-            if (off < 0.02) { el.innerHTML = `<span style="color:var(--ok)">✓ Art ratio ${r.toFixed(3)} matches A6 — no cropping.</span>`; }
+            if (off < A6_TOL) { el.innerHTML = `<span style="color:var(--ok)">✓ Art ratio ${r.toFixed(3)} matches A6 — fills the full page, no cropping.</span>`; }
             else { el.innerHTML = `<span style="color:var(--gold)">⚠ Art ratio ${r.toFixed(3)} ≠ A6 0.709. In <b>Fill</b> mode the ${r > A6_RATIO ? 'left/right' : 'top/bottom'} edges get cropped. Use <b>Fit whole art</b> to see everything, or re-export your source at 105×148&nbsp;mm.</span>`; }
         }
         $('#fitMode').onchange = e => { state.fit = e.target.value; renderStage(); };
@@ -1516,29 +1530,46 @@
         }
 
         const PAPERS = {
-            A3: { w: 297, h: 420 },
-            A4: { w: 210, h: 297 },
-            LETTER: { w: 215.9, h: 279.4 },
+            A3: { w: 297, h: 420, grid: { cols: 3, rows: 3 } },   // 9-up
+            A4: { w: 210, h: 297, grid: { cols: 2, rows: 2 } },   // 4-up
+            LETTER: { w: 215.9, h: 279.4, grid: { cols: 2, rows: 2 } }, // 4-up
         };
         const GAP = 0; // mm between badges; cut marks handle separation
+        const SHEET_MARGIN = 4; // mm min margin reserved around the badge grid
 
-        // physical badge size in mm. A6 if art matches; else from pixels @96dpi, capped to sheet.
+        // physical badge size in mm.
+        // For A6-ratio artwork we honour the paper's TARGET grid (e.g. 3×3 on A3)
+        // by scaling the badge to the largest size that packs that many while
+        // preserving the exact A6 ratio — so it uses the full page with no
+        // distortion and no cropping.
         function badgeSizeMM(paper) {
             const d = state.frontDims;
-            if (!d) return { w: A6.w, h: A6.h, isA6: true };
-            const r = d.w / d.h, off = Math.abs(r - A6.w / A6.h) / (A6.w / A6.h);
-            if (off < 0.02) return { w: A6.w, h: A6.h, isA6: true };
-            // real size at 96 DPI (1px = 0.2645833 mm)
+            const g = paper.grid || { cols: 1, rows: 1 };
+            const usableW = paper.w - 2 * SHEET_MARGIN;
+            const usableH = paper.h - 2 * SHEET_MARGIN;
+            if (!d || isA6Ratio(d)) {
+                // largest A6-ratio cell that fits cols×rows in the usable area
+                const cellW = (usableW - (g.cols - 1) * GAP) / g.cols;
+                const cellH = (usableH - (g.rows - 1) * GAP) / g.rows;
+                // constrain to A6 ratio (w/h = 0.709)
+                let bw = cellW, bh = bw / A6_RATIO;
+                if (bh > cellH) { bh = cellH; bw = bh * A6_RATIO; }
+                return { w: +bw.toFixed(2), h: +bh.toFixed(2), isA6: true, grid: g };
+            }
+            // non-A6 art: real size at 96 DPI, capped to sheet
             let mmW = d.w * 25.4 / 96, mmH = d.h * 25.4 / 96;
-            // cap so at least 1 fits per sheet with margins
             const maxW = paper.w - 10, maxH = paper.h - 10;
             const sc = Math.min(1, maxW / mmW, maxH / mmH);
             return { w: +(mmW * sc).toFixed(1), h: +(mmH * sc).toFixed(1), isA6: false };
         }
-        // how many fit per row/col on a sheet for a given badge size
+        // how many fit per row/col. For A6 badges we use the paper's target grid
+        // directly (the badge was sized to fit it). For odd-ratio art we measure.
         function gridFor(paper, bw, bh) {
-            const cols = Math.max(1, Math.floor((paper.w + GAP) / (bw + GAP)));
-            const rows = Math.max(1, Math.floor((paper.h + GAP) / (bh + GAP)));
+            const usableW = paper.w - 2 * SHEET_MARGIN;
+            const usableH = paper.h - 2 * SHEET_MARGIN;
+            const EPS = 0.6; // mm slack for float error
+            const cols = Math.max(1, Math.floor((usableW + GAP + EPS) / (bw + GAP)));
+            const rows = Math.max(1, Math.floor((usableH + GAP + EPS) / (bh + GAP)));
             return { cols, rows };
         }
 
@@ -1587,14 +1618,15 @@
             const paper = PAPERS[$('#paper').value];
             const order = $('#order').value;
             const cutMarks = $('#cutMarks').checked, gapLine = $('#gapLine').checked;
-            const grid = gridFor(paper, bs.w, bs.h);
+            const dpi = parseInt($('#quality').value, 10) || 300;
+            const grid = bs.isA6 && bs.grid ? bs.grid : gridFor(paper, bs.w, bs.h);
             const cols = grid.cols, rows = grid.rows, perPage = cols * rows;
             restoreModal();
             const overlay = $('#overlay'); overlay.classList.add('show');
             const setBar = (p, msg) => { const b = $('#mBar'); if (b) b.style.width = p + '%'; const mm = $('#mMsg'); if (mm && msg) mm.textContent = msg; };
 
             try {
-                const pdf = new jsPDF({ orientation: paper.w > paper.h ? 'l' : 'p', unit: 'mm', format: [paper.w, paper.h] });
+                const pdf = new jsPDF({ orientation: paper.w > paper.h ? 'l' : 'p', unit: 'mm', format: [paper.w, paper.h], compress: true });
                 const bw = bs.w, bh = bs.h;
                 const marginX = (paper.w - (cols * bw + (cols - 1) * GAP)) / 2;
                 const marginY = (paper.h - (rows * bh + (rows - 1) * GAP)) / 2;
@@ -1607,8 +1639,8 @@
                         const idx = startIdx + i;
                         const col = i % cols, rowi = Math.floor(i / cols);
                         const x = marginX + col * (bw + GAP), y = marginY + rowi * (bh + GAP);
-                        const canvas = await renderBadgeCanvas(idx, side);
-                        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, y, bw, bh);
+                        const canvas = await renderBadgeCanvas(idx, side, bw, bh, dpi);
+                        pdf.addImage(canvas.toDataURL('image/jpeg', 0.96), 'JPEG', x, y, bw, bh, undefined, 'SLOW');
                         if (gapLine) { pdf.setDrawColor(200); pdf.setLineWidth(0.1); pdf.rect(x, y, bw, bh); }
                         if (cutMarks) drawCutMarks(pdf, x, y, bw, bh);
                     }
@@ -1633,10 +1665,10 @@
                 }
 
                 setBar(100, 'Finishing PDF…');
-                const fname = `badges_${$('#paper').value}_${N}.pdf`;
+                const fname = `badges_${$('#paper').value}_${N}_${dpi}dpi.pdf`;
                 pdf.save(fname);
                 overlay.classList.remove('show');
-                toast(`PDF exported · ${perPage}/sheet · ${fname}`, 'ok');
+                toast(`PDF exported · ${cols}×${rows}=${perPage}/sheet · ${dpi} DPI · ${fname}`, 'ok');
             } catch (err) {
                 overlay.classList.remove('show');
                 toast('Export failed: ' + err.message, 'err');
@@ -1644,18 +1676,20 @@
             }
         }
 
-        // Render one badge (one side, one attendee) to a high-res canvas
-        async function renderBadgeCanvas(idx, side) {
-            const dims = side === 'front' ? state.frontDims : state.backDims;
+        // Render one badge (one side, one attendee) to a high-res canvas.
+        // Canvas pixel size is derived from the badge's physical mm size and the
+        // chosen DPI so the rasterised image is genuinely print resolution.
+        async function renderBadgeCanvas(idx, side, bwMM, bhMM, dpi) {
             const front = state.frontDims;
-            const isA6 = front ? Math.abs((front.w / front.h) - (A6.w / A6.h)) / (A6.w / A6.h) < 0.02 : true;
-            let W, H;
-            if (isA6) { const SC = 4; W = A6.w * SC; H = A6.h * SC; }
-            else { const ratio = dims ? dims.w / dims.h : A6.w / A6.h; H = 640; W = Math.round(H * ratio); }
+            const isA6 = isA6Ratio(front);
+            // mm -> px at target DPI  (px = mm / 25.4 * dpi)
+            const W = Math.max(1, Math.round(bwMM / 25.4 * dpi));
+            const H = Math.max(1, Math.round(bhMM / 25.4 * dpi));
             const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
             const ctx = cv.getContext('2d');
+            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
             ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-            // background art
+            // background art — fills the FULL badge area
             const img = side === 'front' ? state.frontImg : state.backImg;
             if (img) {
                 const bg = await loadImg(img);
