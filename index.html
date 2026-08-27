@@ -706,6 +706,54 @@
             border-color: #fff
         }
 
+        .sw.custom-sw {
+            display: block;
+            padding: 0;
+            position: relative;
+            overflow: hidden;
+            background-image: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+        }
+
+        .sw.custom-sw input[type=color] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 100%;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            opacity: 0;
+            position: absolute;
+            inset: 0;
+        }
+
+        .hexrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px
+        }
+
+        .hexrow span {
+            font-size: 12px;
+            color: var(--muted);
+            flex: none
+        }
+
+        .hexrow input[type=text] {
+            text-transform: uppercase;
+            font-family: 'Archivo', monospace;
+            letter-spacing: .5px;
+        }
+
+        .hexrow .swatch-preview {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid var(--line2);
+            flex: none
+        }
+
         .noedit {
             color: var(--muted2);
             font-size: 12.5px;
@@ -1034,7 +1082,7 @@
         const stageW = A6.w * 8, stageH = A6.h * 8; // base px for canvas (840x1184)
 
         const FONTS = ['Archivo', 'Fraunces', 'Playfair Display', 'Bebas Neue', 'Oswald', 'Lora', 'Archivo Narrow', 'Cinzel Decorative', 'Rye'];
-        const COLORS = ['#15171c', '#ffffff', '#e8623d', '#3f7ad6', '#d9a441', '#222', '#4d0203'];
+        const COLORS = ['#15171c', '#ffffff', '#e8623d', '#3f7ad6', '#d9a441', '#222'];
 
         // every placeable field
         const FIELD_DEFS = [
@@ -1440,7 +1488,17 @@
       ${['left', 'center', 'right'].map(a => `<button data-a="${a}" class="${f.align === a ? 'on' : ''}">${a}</button>`).join('')}
     </div>
     <label class="fld">Text colour</label>
-    <div class="swatches" id="iColor">${COLORS.map(c => `<div class="sw ${f.color === c ? 'on' : ''}" data-c="${c}" style="background:${c};${c === '#ffffff' ? 'border-color:#555' : ''}"></div>`).join('')}</div>
+    <div class="swatches" id="iColor">
+      ${COLORS.map(c => `<div class="sw ${f.color === c ? 'on' : ''}" data-c="${c}" style="background:${c};${c === '#ffffff' ? 'border-color:#555' : ''}"></div>`).join('')}
+      <label class="sw custom-sw" title="Pick a custom colour">
+        <input type="color" id="iColorPicker" value="${toHex6(f.color)}">
+      </label>
+    </div>
+    <div class="hexrow">
+      <div class="swatch-preview" id="iHexPreview" style="background:${f.color}"></div>
+      <span>Hex</span>
+      <input type="text" id="iHex" value="${f.color}" maxlength="7" placeholder="#15171c" style="flex:1">
+    </div>
     <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer;margin-top:12px">
       <input type="checkbox" id="iUpper" ${f.upper ? 'checked' : ''} style="accent-color:var(--accent2)"> UPPERCASE
     </label>
@@ -1465,7 +1523,22 @@
                 $('#iSize').oninput = e => { f.size = +e.target.value; buildInspector(); reflect(); };
                 $('#iWeight').onchange = e => { f.weight = +e.target.value; reflect(); };
                 $$('#iAlign button').forEach(b => b.onclick = () => { f.align = b.dataset.a; buildInspector(); reflect(); });
-                $$('#iColor .sw').forEach(s => s.onclick = () => { f.color = s.dataset.c; buildInspector(); reflect(); });
+                $$('#iColor .sw[data-c]').forEach(s => s.onclick = () => { f.color = s.dataset.c; buildInspector(); reflect(); });
+                // native colour-wheel picker
+                $('#iColorPicker').oninput = e => { f.color = e.target.value; renderStage(); syncColorUI(f.color); };
+                $('#iColorPicker').onchange = () => buildInspector();
+                // hex text field
+                $('#iHex').onchange = e => {
+                    let v = e.target.value.trim();
+                    if (!v.startsWith('#')) v = '#' + v;
+                    if (/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test(v)) {
+                        f.color = v.length === 4 ? '#' + [...v.slice(1)].map(ch => ch + ch).join('') : v.toLowerCase();
+                        buildInspector(); reflect();
+                    } else {
+                        toast('Enter a valid hex code, e.g. #ff0000', 'err');
+                        e.target.value = f.color;
+                    }
+                };
                 $('#iUpper').onchange = e => { f.upper = e.target.checked; reflect(); };
                 $('#iPrefix').oninput = e => { f.prefix = e.target.value; reflect(); };
             } else {
@@ -1474,6 +1547,18 @@
             }
             $('#iX').oninput = e => { f.x = +e.target.value; buildInspector(); reflect(); };
             $('#iY').oninput = e => { f.y = +e.target.value; buildInspector(); reflect(); };
+        }
+        // keep the hex box + preview swatch in sync while dragging the colour wheel
+        function syncColorUI(hex) {
+            const hexInput = $('#iHex'); if (hexInput) hexInput.value = hex;
+            const prev = $('#iHexPreview'); if (prev) prev.style.background = hex;
+        }
+        // normalise any css colour (incl. 3-digit hex) to a 6-digit hex for <input type=color>
+        function toHex6(c) {
+            if (!c) return '#000000';
+            if (/^#[0-9a-fA-F]{6}$/.test(c)) return c;
+            if (/^#[0-9a-fA-F]{3}$/.test(c)) return '#' + [...c.slice(1)].map(ch => ch + ch).join('');
+            return '#000000';
         }
 
         /* =========================================================================
