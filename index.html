@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@400;600&family=Playfair+Display:wght@600;800&family=Bebas+Neue&family=Oswald:wght@400;600&family=Lora:wght@400;600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@400;600&family=Playfair+Display:wght@600;800&family=Bebas+Neue&family=Oswald:wght@400;600&family=Lora:wght@400;600&family=Birthstone&family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400..900&family=Rye&display=swap&display=swap"
         rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -729,6 +729,12 @@
             display: grid
         }
 
+        .rye-regular {
+            font-family: "Rye", serif;
+            font-weight: 400;
+            font-style: normal;
+        }
+
         .modal {
             background: var(--panel);
             border: 1px solid var(--line2);
@@ -1027,7 +1033,7 @@
         const PX_PER_MM = 4;                    // stage render resolution helper
         const stageW = A6.w * 8, stageH = A6.h * 8; // base px for canvas (840x1184)
 
-        const FONTS = ['Archivo', 'Fraunces', 'Playfair Display', 'Bebas Neue', 'Oswald', 'Lora', 'Archivo Narrow'];
+        const FONTS = ['Archivo', 'Fraunces', 'Playfair Display', 'Bebas Neue', 'Oswald', 'Lora', 'Archivo Narrow', 'Cinzel Decorative', 'Rye'];
         const COLORS = ['#15171c', '#ffffff', '#e8623d', '#3f7ad6', '#d9a441', '#222'];
 
         // every placeable field
