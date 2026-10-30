@@ -1,0 +1,1878 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Badge Studio — Conference Badge Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@400;600&family=Playfair+Display:wght@600;800&family=Bebas+Neue&family=Oswald:wght@400;600&family=Lora:wght@400;600&family=Birthstone&family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400..900&family=Rye&display=swap&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --ink: #15171c;
+            --paper: #f4f1ea;
+            --panel: #1b1e26;
+            --panel2: #22262f;
+            --line: #2e333d;
+            --line2: #3a4049;
+            --muted: #8b93a1;
+            --muted2: #646b78;
+            --accent: #e8623d;
+            --accent2: #3f7ad6;
+            --gold: #d9a441;
+            --ok: #4caf7d;
+            --field-sel: #b9a4ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            font-family: 'Archivo', sans-serif;
+            background: var(--ink);
+            color: #e8e9ec;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        ::selection {
+            background: var(--accent);
+            color: #fff
+        }
+
+        /* ---------- top bar ---------- */
+        header {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 12px 22px;
+            background: linear-gradient(180deg, #1c1f27, #15171c);
+            border-bottom: 1px solid var(--line);
+            flex: none;
+            z-index: 30;
+        }
+
+        .brand {
+            display: flex;
+            align-items: baseline;
+            gap: 10px
+        }
+
+        .brand b {
+            font-family: 'Fraunces', serif;
+            font-weight: 900;
+            font-size: 23px;
+            letter-spacing: -.5px
+        }
+
+        .brand b i {
+            font-style: italic;
+            color: var(--accent)
+        }
+
+        .brand span {
+            font-size: 11px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--muted2)
+        }
+
+        .steps {
+            display: flex;
+            gap: 4px;
+            margin-left: 8px
+        }
+
+        .steps .s {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--muted2);
+            padding: 5px 11px;
+            border-radius: 20px;
+            border: 1px solid transparent;
+            white-space: nowrap
+        }
+
+        .steps .s.on {
+            color: #fff;
+            border-color: var(--line2);
+            background: var(--panel2)
+        }
+
+        .steps .s b {
+            color: var(--accent);
+            margin-right: 6px;
+            font-family: 'Bebas Neue'
+        }
+
+        header .spacer {
+            flex: 1
+        }
+
+        .btn {
+            font-family: 'Archivo';
+            font-weight: 700;
+            font-size: 13px;
+            letter-spacing: .3px;
+            border: 1px solid var(--line2);
+            background: var(--panel2);
+            color: #e8e9ec;
+            padding: 9px 16px;
+            border-radius: 9px;
+            cursor: pointer;
+            transition: .15s;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            border-color: var(--muted);
+            background: #2a2f39
+        }
+
+        .btn.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff
+        }
+
+        .btn.primary:hover {
+            background: #f06f4a;
+            filter: brightness(1.05)
+        }
+
+        .btn.go {
+            background: var(--ok);
+            border-color: var(--ok);
+            color: #06231a
+        }
+
+        .btn.go:hover {
+            filter: brightness(1.08)
+        }
+
+        .btn:disabled {
+            opacity: .4;
+            cursor: not-allowed
+        }
+
+        /* ---------- layout ---------- */
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 320px 1fr 326px;
+            overflow: hidden
+        }
+
+        .col {
+            overflow-y: auto;
+            overflow-x: hidden
+        }
+
+        .col.left {
+            border-right: 1px solid var(--line);
+            background: var(--panel)
+        }
+
+        .col.right {
+            border-left: 1px solid var(--line);
+            background: var(--panel)
+        }
+
+        .col.center {
+            background: radial-gradient(circle at 50% 0%, #1f232c, #121419);
+            display: flex;
+            flex-direction: column
+        }
+
+        .col::-webkit-scrollbar {
+            width: 9px
+        }
+
+        .col::-webkit-scrollbar-thumb {
+            background: var(--line2);
+            border-radius: 9px
+        }
+
+        .col::-webkit-scrollbar-track {
+            background: transparent
+        }
+
+        .sec {
+            padding: 18px;
+            border-bottom: 1px solid var(--line)
+        }
+
+        .sec h3 {
+            font-family: 'Archivo';
+            font-weight: 800;
+            font-size: 11px;
+            letter-spacing: 2.5px;
+            text-transform: uppercase;
+            color: var(--accent2);
+            margin-bottom: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px
+        }
+
+        .sec h3 .num {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent2);
+            color: #fff;
+            font-size: 11px;
+            display: grid;
+            place-items: center;
+            font-family: 'Bebas Neue';
+            flex: none
+        }
+
+        label.fld {
+            display: block;
+            font-size: 11px;
+            color: var(--muted);
+            margin: 11px 0 5px;
+            letter-spacing: .4px
+        }
+
+        label.fld:first-of-type {
+            margin-top: 0
+        }
+
+        input[type=text],
+        input[type=url],
+        select {
+            width: 100%;
+            background: #13151a;
+            border: 1px solid var(--line2);
+            color: #e8e9ec;
+            padding: 9px 11px;
+            border-radius: 8px;
+            font-family: 'Archivo';
+            font-size: 13px;
+            outline: none;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: var(--accent2)
+        }
+
+        select {
+            cursor: pointer
+        }
+
+        .drop {
+            border: 1.5px dashed var(--line2);
+            border-radius: 11px;
+            padding: 18px 14px;
+            text-align: center;
+            cursor: pointer;
+            transition: .15s;
+            background: #13151a;
+            position: relative;
+        }
+
+        .drop:hover {
+            border-color: var(--accent2);
+            background: #171a21
+        }
+
+        .drop.has {
+            border-style: solid;
+            border-color: var(--ok);
+            padding: 8px
+        }
+
+        .drop .ic {
+            font-size: 22px;
+            opacity: .6
+        }
+
+        .drop .t {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 5px
+        }
+
+        .drop .t b {
+            color: #cfd3da
+        }
+
+        .drop img {
+            max-width: 100%;
+            max-height: 120px;
+            border-radius: 6px;
+            display: block;
+            margin: 0 auto
+        }
+
+        .drop input[type=file] {
+            display: none
+        }
+
+        .twocol {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px
+        }
+
+        .hint {
+            font-size: 11px;
+            color: var(--muted2);
+            line-height: 1.5;
+            margin-top: 9px
+        }
+
+        .hint code {
+            background: #0d0e12;
+            padding: 1px 5px;
+            border-radius: 4px;
+            color: var(--gold);
+            font-size: 10.5px
+        }
+
+        .pill {
+            display: inline-block;
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            background: #13151a;
+            border: 1px solid var(--line2);
+            color: var(--muted);
+            padding: 3px 8px;
+            border-radius: 20px;
+            margin: 3px 3px 0 0
+        }
+
+        .pill.ok {
+            color: var(--ok);
+            border-color: #2c5e48;
+            background: #10231b
+        }
+
+        .maprow {
+            display: grid;
+            grid-template-columns: 96px 1fr;
+            gap: 9px;
+            align-items: center;
+            margin-bottom: 8px
+        }
+
+        .maprow span {
+            font-size: 11.5px;
+            color: var(--muted)
+        }
+
+        .statusline {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 8px
+        }
+
+        .statusline b {
+            color: var(--ok)
+        }
+
+        /* ---------- center / canvas ---------- */
+        .sidetabs {
+            display: flex;
+            gap: 0;
+            padding: 14px 22px 0;
+            justify-content: center
+        }
+
+        .sidetabs button {
+            font-family: 'Archivo';
+            font-weight: 700;
+            font-size: 12px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            background: none;
+            border: none;
+            border-bottom: 2.5px solid transparent;
+            color: var(--muted2);
+            padding: 9px 22px;
+            cursor: pointer;
+            transition: .15s;
+        }
+
+        .sidetabs button.on {
+            color: #fff;
+            border-color: var(--accent)
+        }
+
+        .stage-wrap {
+            flex: 1;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            overflow: auto
+        }
+
+        .stage {
+            position: relative;
+            background: #fff;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, .6);
+            border-radius: 3px;
+            background-size: cover;
+            background-position: center;
+            flex: none;
+        }
+
+        .stage.empty {
+            display: grid;
+            place-items: center
+        }
+
+        .stage.empty .ph {
+            text-align: center;
+            color: #9aa0ab;
+            font-family: 'Archivo'
+        }
+
+        .stage.empty .ph .ic {
+            font-size: 42px;
+            opacity: .4
+        }
+
+        .stage.empty .ph div {
+            margin-top: 8px;
+            font-size: 13px
+        }
+
+        .fld-box {
+            position: absolute;
+            border: 1.5px dashed transparent;
+            cursor: move;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            user-select: none;
+            border-radius: 3px;
+        }
+
+        .fld-box:hover {
+            border-color: rgba(63, 122, 214, .6)
+        }
+
+        .fld-box.sel {
+            border-color: var(--field-sel);
+            border-style: solid;
+            background: rgba(185, 164, 255, .08)
+        }
+
+        .fld-box .lbl {
+            position: absolute;
+            top: -17px;
+            left: 0;
+            font-size: 9px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            background: var(--field-sel);
+            color: #1a1430;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-family: 'Archivo';
+            font-weight: 700;
+            white-space: nowrap;
+            opacity: 0;
+            transition: .1s;
+        }
+
+        .fld-box.sel .lbl,
+        .fld-box:hover .lbl {
+            opacity: 1
+        }
+
+        .fld-box .txt {
+            width: 100%;
+            line-height: 1.1;
+            pointer-events: none;
+            white-space: pre-wrap
+        }
+
+        .fld-box img,
+        .fld-box canvas,
+        .fld-box svg {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none
+        }
+
+        .fld-box .handle {
+            position: absolute;
+            right: -6px;
+            bottom: -6px;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: var(--field-sel);
+            border: 2px solid #fff;
+            cursor: nwse-resize;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .4)
+        }
+
+        .fld-box .ph-mini {
+            font-size: 10px;
+            color: #aaa;
+            width: 100%;
+            text-align: center;
+            font-family: 'Archivo'
+        }
+
+        .zoombar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            padding: 10px;
+            border-top: 1px solid var(--line);
+            background: #15171c;
+            flex: none
+        }
+
+        .zoombar button {
+            width: 30px;
+            height: 30px;
+            border-radius: 7px;
+            border: 1px solid var(--line2);
+            background: var(--panel2);
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px
+        }
+
+        .zoombar span {
+            font-size: 12px;
+            color: var(--muted);
+            min-width: 48px;
+            text-align: center
+        }
+
+        .recnav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 20px
+        }
+
+        .recnav .who {
+            font-size: 12px;
+            color: #cfd3da;
+            min-width: 140px;
+            text-align: center;
+            font-weight: 600
+        }
+
+        /* ---------- right / inspector ---------- */
+        .toggles label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            cursor: pointer;
+            font-size: 13px
+        }
+
+        .toggles input {
+            appearance: none;
+            width: 38px;
+            height: 21px;
+            background: #13151a;
+            border: 1px solid var(--line2);
+            border-radius: 20px;
+            position: relative;
+            cursor: pointer;
+            flex: none;
+            transition: .15s
+        }
+
+        .toggles input:checked {
+            background: var(--accent2);
+            border-color: var(--accent2)
+        }
+
+        .toggles input::after {
+            content: "";
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #fff;
+            top: 2px;
+            left: 2px;
+            transition: .15s
+        }
+
+        .toggles input:checked::after {
+            left: 19px
+        }
+
+        .toggles .nm {
+            flex: 1
+        }
+
+        .toggles .chip {
+            font-size: 9px;
+            letter-spacing: .5px;
+            color: var(--muted2);
+            text-transform: uppercase
+        }
+
+        .editing-on {
+            font-family: 'Fraunces', serif;
+            font-style: italic;
+            font-size: 15px;
+            color: #fff
+        }
+
+        .rng {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 6px 0 2px
+        }
+
+        .rng input[type=range] {
+            flex: 1;
+            accent-color: var(--accent2)
+        }
+
+        .rng .v {
+            font-size: 12px;
+            color: var(--muted);
+            min-width: 42px;
+            text-align: right
+        }
+
+        .alignbtns {
+            display: flex;
+            gap: 6px
+        }
+
+        .alignbtns button {
+            flex: 1;
+            background: var(--panel2);
+            border: 1px solid var(--line2);
+            color: var(--muted);
+            padding: 7px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600
+        }
+
+        .alignbtns button.on {
+            background: var(--accent2);
+            border-color: var(--accent2);
+            color: #fff
+        }
+
+        .swatches {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap
+        }
+
+        .sw {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent
+        }
+
+        .sw.on {
+            border-color: #fff
+        }
+
+        .sw.custom-sw {
+            display: block;
+            padding: 0;
+            position: relative;
+            overflow: hidden;
+            background-image: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+        }
+
+        .sw.custom-sw input[type=color] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 100%;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            opacity: 0;
+            position: absolute;
+            inset: 0;
+        }
+
+        .hexrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px
+        }
+
+        .hexrow span {
+            font-size: 12px;
+            color: var(--muted);
+            flex: none
+        }
+
+        .hexrow input[type=text] {
+            text-transform: uppercase;
+            font-family: 'Archivo', monospace;
+            letter-spacing: .5px;
+        }
+
+        .hexrow .swatch-preview {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid var(--line2);
+            flex: none
+        }
+
+        .noedit {
+            color: var(--muted2);
+            font-size: 12.5px;
+            line-height: 1.6;
+            text-align: center;
+            padding: 30px 10px
+        }
+
+        /* ---------- modal / overlay ---------- */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(8, 9, 12, .82);
+            backdrop-filter: blur(3px);
+            display: none;
+            place-items: center;
+            z-index: 100
+        }
+
+        .overlay.show {
+            display: grid
+        }
+
+        .rye-regular {
+            font-family: "Rye", serif;
+            font-weight: 400;
+            font-style: normal;
+        }
+
+        .modal {
+            background: var(--panel);
+            border: 1px solid var(--line2);
+            border-radius: 16px;
+            padding: 30px;
+            width: min(440px, 90vw);
+            text-align: center;
+            box-shadow: 0 30px 90px rgba(0, 0, 0, .6)
+        }
+
+        .modal h2 {
+            font-family: 'Fraunces', serif;
+            font-size: 24px;
+            margin-bottom: 8px
+        }
+
+        .modal h2 i {
+            color: var(--accent);
+            font-style: italic
+        }
+
+        .modal p {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.6;
+            margin-bottom: 18px
+        }
+
+        .bar {
+            height: 9px;
+            background: #13151a;
+            border-radius: 9px;
+            overflow: hidden;
+            margin: 14px 0
+        }
+
+        .bar i {
+            display: block;
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--gold));
+            width: 0;
+            transition: .3s
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(140%);
+            background: var(--panel2);
+            border: 1px solid var(--line2);
+            padding: 13px 22px;
+            border-radius: 11px;
+            font-size: 13px;
+            z-index: 120;
+            transition: .35s;
+            box-shadow: 0 14px 40px rgba(0, 0, 0, .5);
+            max-width: 88vw
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0)
+        }
+
+        .toast.err {
+            border-color: #7a3030;
+            background: #2a1717
+        }
+
+        .toast.ok {
+            border-color: #2c5e48
+        }
+
+        .miniface {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px
+        }
+
+        .miniface button {
+            flex: 1;
+            font-size: 11px;
+            padding: 7px;
+            border-radius: 8px;
+            border: 1px solid var(--line2);
+            background: var(--panel2);
+            color: var(--muted);
+            cursor: pointer;
+            font-weight: 600;
+            letter-spacing: .5px;
+            text-transform: uppercase
+        }
+
+        .miniface button.on {
+            border-color: var(--accent);
+            color: #fff;
+            background: #2a2f39
+        }
+
+        .hidden {
+            display: none !important
+        }
+
+        .grow {
+            height: 14px
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="brand">
+            <b>Badge<i>Studio</i></b>
+            <span>conference&nbsp;edition</span>
+        </div>
+        <div class="steps">
+            <div class="s on"><b>1</b>Artwork</div>
+            <div class="s on"><b>2</b>Data</div>
+            <div class="s on"><b>3</b>Layout</div>
+            <div class="s on"><b>4</b>Print</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn" id="saveTpl">Save layout</button>
+        <button class="btn" id="loadTpl">Load layout</button>
+        <button class="btn go" id="exportBtn" disabled>⤓ Export PDF</button>
+    </header>
+
+    <main>
+        <!-- LEFT -->
+        <div class="col left">
+            <div class="sec">
+                <h3><span class="num">1</span>Blank badge artwork</h3>
+                <label class="fld">Front (A6 portrait, PNG/JPG)</label>
+                <div class="drop" id="dropFront">
+                    <input type="file" accept="image/*" id="fileFront">
+                    <div class="ic">⬆</div>
+                    <div class="t">Drop or <b>browse</b> front art</div>
+                </div>
+                <label class="fld">Back (A6 portrait, PNG/JPG)</label>
+                <div class="drop" id="dropBack">
+                    <input type="file" accept="image/*" id="fileBack">
+                    <div class="ic">⬆</div>
+                    <div class="t">Drop or <b>browse</b> back art</div>
+                </div>
+
+                <label class="fld">If art isn't A6 ratio, how to place it</label>
+                <select id="fitMode">
+                    <option value="fill">Fill cell — crop overflow (default)</option>
+                    <option value="contain">Fit whole art — letterbox</option>
+                    <option value="stretch">Stretch to A6 — may distort</option>
+                </select>
+                <div id="ratioWarn" class="hint"></div>
+                <div class="hint">A6 = 105 × 148 mm (ratio 0.709). Art at that ratio fills perfectly with no cropping.
+                </div>
+            </div>
+
+            <div class="sec">
+                <h3><span class="num">+</span>Custom image <span
+                        style="color:var(--muted2);font-weight:600;letter-spacing:1px">· same on every badge</span></h3>
+                <div class="miniface" style="margin-top:0">
+                    <button class="on" id="logoSideFront">Front</button>
+                    <button id="logoSideBack">Back</button>
+                </div>
+                <div class="grow"></div>
+                <div class="drop" id="dropLogo">
+                    <input type="file" accept="image/*" id="fileLogo">
+                    <div class="ic">🖼</div>
+                    <div class="t">Drop logo / signature / hologram</div>
+                </div>
+                <div class="hint">Appears on every badge of the chosen side. Toggle it on the right, then drag & resize
+                    on the canvas like any field.</div>
+            </div>
+
+            <div class="sec">
+                <h3><span class="num">2</span>Attendee data</h3>
+                <div class="miniface" style="margin-top:0">
+                    <button class="on" id="srcUpload">Upload file</button>
+                    <button id="srcLink">Sheet link</button>
+                </div>
+
+                <div id="paneUpload">
+                    <div class="grow"></div>
+                    <div class="drop" id="dropData">
+                        <input type="file" accept=".csv,.xlsx,.xls" id="fileData">
+                        <div class="ic">▦</div>
+                        <div class="t">Drop <b>CSV / XLSX</b> or browse</div>
+                    </div>
+                </div>
+
+                <div id="paneLink" class="hidden">
+                    <label class="fld">Published Google Sheet link</label>
+                    <input type="url" id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…">
+                    <div class="hint">In Sheets: <code>File → Share → Publish to web</code> (CSV), then paste the link.
+                        Private sheets won't load — export & upload instead.</div>
+                    <button class="btn primary" id="loadSheet" style="width:100%;margin-top:10px">Load sheet</button>
+                </div>
+
+                <div id="dataStatus" class="statusline"></div>
+            </div>
+
+            <div class="sec hidden" id="mapSec">
+                <h3><span class="num">·</span>Map columns</h3>
+                <div id="mapRows"></div>
+                <div class="hint" id="codeHint">
+                    QR / barcode columns accept either an <b>image link</b> (https://…png) or <b>raw text/number</b> to
+                    encode automatically.
+                </div>
+            </div>
+        </div>
+
+        <!-- CENTER -->
+        <div class="col center">
+            <div class="sidetabs">
+                <button class="on" id="tabFront">Front</button>
+                <button id="tabBack">Back</button>
+            </div>
+            <div class="stage-wrap">
+                <div class="stage empty" id="stage">
+                    <div class="ph">
+                        <div class="ic">🪪</div>
+                        <div>Upload the front artwork to begin</div>
+                    </div>
+                </div>
+            </div>
+            <div class="zoombar">
+                <button id="zOut">−</button><span id="zVal">fit</span><button id="zIn">+</button>
+                <div class="recnav">
+                    <button class="btn" id="prevRec" style="padding:6px 12px">‹</button>
+                    <span class="who" id="recWho">No data loaded</span>
+                    <button class="btn" id="nextRec" style="padding:6px 12px">›</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT -->
+        <div class="col right">
+            <div class="sec">
+                <h3>Show on badge <span style="color:var(--muted2);font-weight:600;letter-spacing:1px">· <span
+                            id="sideLabel">FRONT</span></span></h3>
+                <div class="toggles" id="toggles"></div>
+            </div>
+            <div class="sec" id="inspector">
+                <div class="noedit">Click a field on the badge to edit its font, size, alignment & position.</div>
+            </div>
+            <div class="sec">
+                <h3><span class="num">4</span>Print setup</h3>
+                <label class="fld">Paper size</label>
+                <select id="paper">
+                    <option value="A3">A3 — 9 badges / sheet (3×3)</option>
+                    <option value="A4">A4 — 4 badges / sheet (2×2)</option>
+                    <option value="LETTER">US Letter — 4 badges / sheet</option>
+                </select>
+                <label class="fld">Page order</label>
+                <select id="order">
+                    <option value="grouped">All fronts, then all backs</option>
+                    <option value="interleave">Front, back, front, back…</option>
+                </select>
+                <label class="fld">Output quality</label>
+                <select id="quality">
+                    <option value="300">300 DPI — print (recommended)</option>
+                    <option value="450">450 DPI — ultra (larger file)</option>
+                    <option value="200">200 DPI — draft (smaller file)</option>
+                </select>
+                <div class="twocol" style="margin-top:11px">
+                    <label
+                        style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer">
+                        <input type="checkbox" id="cutMarks" checked style="accent-color:var(--accent2)"> Crop marks
+                    </label>
+                    <label
+                        style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer">
+                        <input type="checkbox" id="gapLine" style="accent-color:var(--accent2)"> Cut lines
+                    </label>
+                </div>
+                <div class="hint" id="printHint">Load data + front art, then export. One PDF, every attendee, front &
+                    back.</div>
+            </div>
+        </div>
+    </main>
+
+    <div class="overlay" id="overlay">
+        <div class="modal">
+            <h2 id="mTitle">Building your <i>badges</i></h2>
+            <p id="mMsg">Rendering codes and laying out pages…</p>
+            <div class="bar"><i id="mBar"></i></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        /* =========================================================================
+           STATE
+           ========================================================================= */
+        const A6 = { w: 105, h: 148 };              // mm
+        const PX_PER_MM = 4;                    // stage render resolution helper
+        const stageW = A6.w * 8, stageH = A6.h * 8; // base px for canvas (840x1184)
+
+        const FONTS = ['Archivo', 'Fraunces', 'Playfair Display', 'Bebas Neue', 'Oswald', 'Lora', 'Archivo Narrow', 'Cinzel Decorative', 'Rye'];
+        const COLORS = ['#15171c', '#ffffff', '#e8623d', '#3f7ad6', '#d9a441', '#222'];
+
+        // every placeable field
+        const FIELD_DEFS = [
+            { key: 'qr', name: 'QR Code', type: 'code', sides: ['front', 'back'] },
+            { key: 'name', name: 'Name', type: 'text', sides: ['front'] },
+            { key: 'barcode', name: 'Barcode', type: 'code', sides: ['front'] },
+            { key: 'inst', name: 'Institution', type: 'text', sides: ['front'] },
+            { key: 'city', name: 'City', type: 'text', sides: ['front'] },
+            { key: 'deltype', name: 'Delegate Type', type: 'text', sides: ['front'] },
+            { key: 'regtype', name: 'Reg Type', type: 'text', sides: ['front'] },
+            { key: 'serial', name: 'Serial No', type: 'text', sides: ['front'] },
+            { key: 'logo', name: 'Custom Image', type: 'logo', sides: ['front', 'back'] },
+        ];
+
+        // default placement per side (percentages 0-100 of A6)
+        function defaultField(key, side) {
+            const def = FIELD_DEFS.find(f => f.key === key);
+            const boxy = def.type === 'code' || def.type === 'logo';
+            const base = {
+                key, side, on: false,
+                x: 50, y: 50, w: 50, h: boxy ? 34 : 10,
+                font: 'Archivo', size: key === 'name' ? 26 : 14, weight: 700,
+                align: 'center', color: '#15171c', upper: false, prefix: ''
+            };
+            // sensible presets resembling the sample badges
+            const P = {
+                front: {
+                    name: { on: true, x: 50, y: 54, w: 84, h: 9, size: 22, align: 'center', weight: 800 },
+                    barcode: { on: true, x: 50, y: 66, w: 60, h: 11 },
+                    qr: { on: false, x: 50, y: 64, w: 42, h: 30 },
+                    deltype: { on: true, x: 50, y: 80, w: 70, h: 7, size: 15, align: 'center', weight: 600, upper: true, color: '#3f7ad6' },
+                    inst: { on: false, x: 50, y: 74, w: 80, h: 6, size: 13 },
+                    city: { on: false, x: 50, y: 88, w: 60, h: 5, size: 12, color: '#646b78' },
+                    regtype: { on: false, x: 50, y: 92, w: 50, h: 5, size: 12 },
+                    serial: { on: false, x: 50, y: 96, w: 40, h: 4, size: 11, color: '#646b78' },
+                    logo: { on: false, x: 78, y: 90, w: 22, h: 14 },
+                },
+                back: {
+                    qr: { on: true, x: 50, y: 55, w: 52, h: 37 },
+                    logo: { on: false, x: 50, y: 88, w: 30, h: 12 },
+                }
+            };
+            return Object.assign(base, (P[side] && P[side][key]) || {});
+        }
+
+        const state = {
+            frontImg: null, backImg: null,           // dataURL
+            frontDims: null, backDims: null,
+            logoImg: { front: null, back: null },       // shared custom image per side
+            fit: 'fill',                            // fill | contain | stretch
+            rows: [], headers: [],
+            map: { name: '', qr: '', barcode: '', inst: '', city: '', deltype: '', regtype: '', serial: '' },
+            fields: { front: {}, back: {} },
+            side: 'front', sel: null, rec: 0, zoom: 'fit', src: 'upload',
+            customCodes: {}, // rowIndex+key -> dataURL (custom uploads, future hook)
+        };
+        // init fields
+        FIELD_DEFS.forEach(f => {
+            f.sides.forEach(s => { state.fields[s][f.key] = defaultField(f.key, s); });
+        });
+
+        /* =========================================================================
+           HELPERS
+           ========================================================================= */
+        const $ = s => document.querySelector(s);
+        const $$ = s => [...document.querySelectorAll(s)];
+        let toastT;
+        function toast(msg, kind = '') {
+            const t = $('#toast'); t.textContent = msg; t.className = 'toast show ' + kind;
+            clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', 3200);
+        }
+
+        function readImageFile(file) {
+            return new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onload = () => { const img = new Image(); img.onload = () => res({ url: r.result, w: img.naturalWidth, h: img.naturalHeight }); img.onerror = rej; img.src = r.result; };
+                r.onerror = rej; r.readAsDataURL(file);
+            });
+        }
+        function isUrl(s) { return /^https?:\/\//i.test((s || '').trim()); }
+
+        // generate a QR dataURL (uses qrcodejs into hidden div)
+        const _qrcache = {};
+        function makeQR(text) {
+            text = (text || '').toString();
+            if (_qrcache[text]) return _qrcache[text];
+            const d = document.createElement('div'); d.style.display = 'none'; document.body.appendChild(d);
+            new QRCode(d, { text: text || ' ', width: 600, height: 600, correctLevel: QRCode.CorrectLevel.M });
+            const cv = d.querySelector('canvas');
+            const url = cv ? cv.toDataURL('image/png') : (d.querySelector('img')?.src || '');
+            document.body.removeChild(d);
+            _qrcache[text] = url; return url;
+        }
+        // generate Code128 barcode dataURL
+        const _bcache = {};
+        function makeBarcode(text) {
+            text = (text || '').toString();
+            if (!text) text = '0';
+            if (_bcache[text]) return _bcache[text];
+            const cv = document.createElement('canvas');
+            try { JsBarcode(cv, text, { format: 'CODE128', displayValue: false, margin: 0, height: 160, width: 3 }); }
+            catch (e) { JsBarcode(cv, '0', { format: 'CODE128', displayValue: false, margin: 0, height: 160, width: 3 }); }
+            const url = cv.toDataURL('image/png'); _bcache[text] = url; return url;
+        }
+
+        /* =========================================================================
+           ARTWORK UPLOAD
+           ========================================================================= */
+        function wireDrop(dropId, fileId, onFile) {
+            const drop = $(dropId), input = $(fileId);
+            drop.addEventListener('click', () => input.click());
+            drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#3f7ad6'; });
+            drop.addEventListener('dragleave', () => drop.style.borderColor = '');
+            drop.addEventListener('drop', e => { e.preventDefault(); drop.style.borderColor = ''; if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); });
+            input.addEventListener('change', e => { if (e.target.files[0]) onFile(e.target.files[0]); });
+        }
+        wireDrop('#dropFront', '#fileFront', async f => {
+            const i = await readImageFile(f); state.frontImg = i.url; state.frontDims = { w: i.w, h: i.h };
+            $('#dropFront').className = 'drop has'; $('#dropFront').innerHTML = `<img src="${i.url}"><div class="t"><b>Front loaded</b> · ${i.w}×${i.h}</div>`;
+            updateRatioWarn(); renderStage(); checkReady();
+        });
+        wireDrop('#dropBack', '#fileBack', async f => {
+            const i = await readImageFile(f); state.backImg = i.url; state.backDims = { w: i.w, h: i.h };
+            $('#dropBack').className = 'drop has'; $('#dropBack').innerHTML = `<img src="${i.url}"><div class="t"><b>Back loaded</b> · ${i.w}×${i.h}</div>`;
+            updateRatioWarn(); renderStage(); checkReady();
+        });
+
+        const A6_RATIO = A6.w / A6.h; // 0.709
+        // tolerance for treating uploaded art as "A6 ratio". 5% absorbs tiny
+        // rounding/bleed differences from real-world A6 exports so 3×3 still works.
+        const A6_TOL = 0.05;
+        function isA6Ratio(dims) {
+            if (!dims) return true;
+            const r = dims.w / dims.h;
+            return Math.abs(r - A6_RATIO) / A6_RATIO < A6_TOL;
+        }
+        function updateRatioWarn() {
+            const d = state.side === 'front' ? state.frontDims : state.backDims;
+            const el = $('#ratioWarn');
+            if (!d) { el.innerHTML = ''; return; }
+            const r = d.w / d.h;
+            const off = Math.abs(r - A6_RATIO) / A6_RATIO;
+            if (off < A6_TOL) { el.innerHTML = `<span style="color:var(--ok)">✓ Art ratio ${r.toFixed(3)} matches A6 — fills the full page, no cropping.</span>`; }
+            else { el.innerHTML = `<span style="color:var(--gold)">⚠ Art ratio ${r.toFixed(3)} ≠ A6 0.709. In <b>Fill</b> mode the ${r > A6_RATIO ? 'left/right' : 'top/bottom'} edges get cropped. Use <b>Fit whole art</b> to see everything, or re-export your source at 105×148&nbsp;mm.</span>`; }
+        }
+        $('#fitMode').onchange = e => { state.fit = e.target.value; renderStage(); };
+
+        // custom image (logo) — applies to currently chosen logo side
+        let logoSide = 'front';
+        $('#logoSideFront').onclick = () => { logoSide = 'front'; $('#logoSideFront').classList.add('on'); $('#logoSideBack').classList.remove('on'); refreshLogoDrop(); };
+        $('#logoSideBack').onclick = () => { logoSide = 'back'; $('#logoSideBack').classList.add('on'); $('#logoSideFront').classList.remove('on'); refreshLogoDrop(); };
+        function refreshLogoDrop() {
+            const url = state.logoImg[logoSide];
+            if (url) { $('#dropLogo').className = 'drop has'; $('#dropLogo').innerHTML = `<img src="${url}"><div class="t"><b>${logoSide} image set</b></div>`; }
+            else { $('#dropLogo').className = 'drop'; $('#dropLogo').innerHTML = `<div class="ic">🖼</div><div class="t">Drop logo / signature / hologram</div>`; }
+        }
+        wireDrop('#dropLogo', '#fileLogo', async f => {
+            const i = await readImageFile(f); state.logoImg[logoSide] = i.url;
+            state.fields[logoSide].logo.on = true;          // auto-enable when uploaded
+            refreshLogoDrop();
+            if (state.side === logoSide) { selectField('logo'); }
+            renderStage(); buildToggles();
+            toast('Custom image added to ' + logoSide, 'ok');
+        });
+
+        /* =========================================================================
+           DATA — upload or sheet link
+           ========================================================================= */
+        $('#srcUpload').onclick = () => { state.src = 'upload'; $('#srcUpload').classList.add('on'); $('#srcLink').classList.remove('on'); $('#paneUpload').classList.remove('hidden'); $('#paneLink').classList.add('hidden'); };
+        $('#srcLink').onclick = () => { state.src = 'link'; $('#srcLink').classList.add('on'); $('#srcUpload').classList.remove('on'); $('#paneLink').classList.remove('hidden'); $('#paneUpload').classList.add('hidden'); };
+
+        wireDrop('#dropData', '#fileData', f => parseDataFile(f));
+        function parseDataFile(file) {
+            const r = new FileReader();
+            r.onload = e => {
+                try {
+                    const wb = XLSX.read(e.target.result, { type: 'binary' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false });
+                    ingestRows(json);
+                } catch (err) { toast('Could not read file: ' + err.message, 'err'); }
+            };
+            r.readAsBinaryString(file);
+        }
+        $('#loadSheet').onclick = async () => {
+            const u = $('#sheetUrl').value.trim();
+            if (!u) { toast('Paste a sheet link first', 'err'); return; }
+            const csv = toCsvUrl(u);
+            if (!csv) { toast('That doesn\'t look like a Sheets link', 'err'); return; }
+            try {
+                $('#dataStatus').innerHTML = 'Fetching…';
+                const res = await fetch(csv); if (!res.ok) throw new Error('HTTP ' + res.status);
+                const text = await res.text();
+                const wb = XLSX.read(text, { type: 'string' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                ingestRows(XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false }));
+            } catch (err) {
+                $('#dataStatus').innerHTML = '';
+                toast('Fetch failed — is the sheet "Published to web"? ' + err.message, 'err');
+            }
+        };
+        function toCsvUrl(u) {
+            const m = u.match(/\/d\/([a-zA-Z0-9-_]+)/) || u.match(/\/d\/e\/([a-zA-Z0-9-_]+)/);
+            if (/\/pub/.test(u)) { // already a published link
+                return u.replace(/pubhtml.*/, 'pub?output=csv').replace(/\/pub\b(?!.*output)/, '/pub?output=csv');
+            }
+            if (!m) return null;
+            const gid = (u.match(/[#&?]gid=(\d+)/) || [])[1] || '0';
+            return `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv&gid=${gid}`;
+        }
+        function ingestRows(arr) {
+            if (!arr || !arr.length) { toast('No rows found', 'err'); return; }
+            state.headers = arr[0].map(h => (h || '').toString().trim());
+            state.rows = arr.slice(1).filter(r => r.some(c => c !== '' && c != null)).map(r => {
+                const o = {}; state.headers.forEach((h, i) => o[h] = r[i] != null ? r[i].toString() : ''); return o;
+            });
+            state.rec = 0;
+            $('#dataStatus').innerHTML = `<b>${state.rows.length}</b> attendees · ${state.headers.length} columns`;
+            autoMap(); buildMapUI(); $('#mapSec').classList.remove('hidden');
+            renderStage(); updateRecNav(); checkReady();
+            toast(state.rows.length + ' attendees loaded', 'ok');
+        }
+        function autoMap() {
+            const find = (...keys) => state.headers.find(h => keys.some(k => h.toLowerCase().replace(/[^a-z]/g, '').includes(k))) || '';
+            state.map.name = find('name', 'fullname');
+            state.map.qr = find('qr', 'qrcode');
+            state.map.barcode = find('barcode', 'bar', 'code');
+            state.map.inst = find('institution', 'hospital', 'organisation', 'organization', 'affiliation');
+            state.map.city = find('city', 'place');
+            state.map.deltype = find('delegatetype', 'delegate', 'category');
+            state.map.regtype = find('regtype', 'registration', 'reg');
+            state.map.serial = find('serial', 'sno', 'id', 'regno');
+        }
+        function buildMapUI() {
+            const labels = { name: 'Name', qr: 'QR data', barcode: 'Barcode', inst: 'Institution', city: 'City', deltype: 'Delegate Type', regtype: 'Reg Type', serial: 'Serial No' };
+            const opts = k => `<option value="">— none —</option>` + state.headers.map(h => `<option value="${h}" ${state.map[k] === h ? 'selected' : ''}>${h}</option>`).join('');
+            $('#mapRows').innerHTML = Object.keys(labels).map(k =>
+                `<div class="maprow"><span>${labels[k]}</span><select data-map="${k}">${opts(k)}</select></div>`).join('');
+            $$('#mapRows select').forEach(sel => sel.onchange = e => { state.map[e.target.dataset.map] = e.target.value; renderStage(); });
+        }
+
+        /* =========================================================================
+           STAGE RENDER
+           ========================================================================= */
+        let dragInfo = null;
+        function curImg() { return state.side === 'front' ? state.frontImg : state.backImg; }
+        function curFields() { return state.fields[state.side]; }
+        function curRow() { return state.rows[state.rec] || null; }
+
+        function valueFor(key) {
+            const row = curRow();
+            const col = state.map[key];
+            let v = row && col ? row[col] : '';
+            if (!v) { // placeholder previews
+                const ph = { name: 'Dr Firstname Lastname', inst: 'Institution Name', city: 'City', deltype: 'DELEGATE', regtype: 'Standard', serial: '001' };
+                v = ph[key] || '';
+            }
+            return v;
+        }
+
+        function renderStage() {
+            const stage = $('#stage');
+            const img = curImg();
+            // size to fit
+            let scale = state.zoom === 'fit' ? Math.min((window.innerHeight - 220) / stageH, 0.62) : state.zoom;
+            scale = Math.max(.18, Math.min(scale, 1.4));
+            const W = stageW * scale, H = stageH * scale;
+            stage.style.width = W + 'px'; stage.style.height = H + 'px';
+            $('#zVal').textContent = state.zoom === 'fit' ? 'fit' : Math.round(scale * 100) + '%';
+
+            if (!img) {
+                stage.className = 'stage empty';
+                stage.style.backgroundImage = '';
+                stage.innerHTML = `<div class="ph"><div class="ic">🪪</div><div>${state.side === 'front' ? 'Upload the front artwork to begin' : 'Upload back artwork (optional)'}</div></div>`;
+                return;
+            }
+            stage.className = 'stage';
+            stage.style.backgroundImage = `url(${img})`;
+            stage.style.backgroundSize = state.fit === 'contain' ? 'contain' : state.fit === 'stretch' ? '100% 100%' : 'cover';
+            stage.style.backgroundRepeat = 'no-repeat';
+            stage.style.backgroundColor = '#fff';
+            stage.innerHTML = '';
+
+            const fields = curFields();
+            Object.values(fields).forEach(f => {
+                if (!f.on) return;
+                const box = document.createElement('div');
+                box.className = 'fld-box' + (state.sel === f.key ? ' sel' : '');
+                box.style.left = (f.x - f.w / 2) + '%'; box.style.top = (f.y - f.h / 2) + '%';
+                box.style.width = f.w + '%'; box.style.height = f.h + '%';
+                box.dataset.key = f.key;
+                box.style.justifyContent = f.align === 'left' ? 'flex-start' : f.align === 'right' ? 'flex-end' : 'center';
+
+                const def = FIELD_DEFS.find(d => d.key === f.key);
+                const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.textContent = def.name; box.appendChild(lbl);
+
+                if (def.type === 'text') {
+                    const t = document.createElement('div'); t.className = 'txt';
+                    let v = valueFor(f.key); if (f.upper) v = v.toUpperCase(); if (f.prefix) v = f.prefix + v;
+                    t.textContent = v;
+                    t.style.fontFamily = `'${f.font}',sans-serif`;
+                    // pt sized against true A6 height (148mm ≈ 419.5pt) for preview = export parity
+                    t.style.fontSize = (f.size / 419.5 * (stageH * scale)) + 'px';
+                    t.style.lineHeight = '1';
+                    t.style.fontWeight = f.weight;
+                    t.style.textAlign = f.align;
+                    t.style.color = f.color;
+                    t.style.whiteSpace = 'nowrap';
+                    t.style.overflow = 'visible';
+                    box.appendChild(t);
+                    // match export's shrink-to-fit so preview == PDF
+                    requestAnimationFrame(() => {
+                        const boxW = box.clientWidth; let g = 0;
+                        let cur = f.size / 419.5 * (stageH * scale);
+                        while (t.scrollWidth > boxW && cur > 5 && g < 60) { cur *= 0.96; t.style.fontSize = cur + 'px'; g++; }
+                    });
+                } else if (def.type === 'logo') {
+                    const url = state.logoImg[state.side];
+                    if (url) { const im = document.createElement('img'); im.src = url; im.style.objectFit = 'contain'; box.appendChild(im); }
+                    else { const p = document.createElement('div'); p.className = 'ph-mini'; p.textContent = 'no image — upload on left'; box.appendChild(p); }
+                } else {
+                    // code field — show real preview
+                    const src = codeSrc(f.key);
+                    if (src) { const im = document.createElement('img'); im.src = src; box.appendChild(im); }
+                    else { const p = document.createElement('div'); p.className = 'ph-mini'; p.textContent = f.key.toUpperCase(); box.appendChild(p); }
+                }
+                if (state.sel === f.key) {
+                    const h = document.createElement('div'); h.className = 'handle'; box.appendChild(h);
+                    h.addEventListener('mousedown', e => startResize(e, f));
+                }
+                box.addEventListener('mousedown', e => { if (e.target.classList.contains('handle')) return; selectField(f.key); startDrag(e, f); });
+                stage.appendChild(box);
+            });
+        }
+        function codeSrc(key) {
+            const row = curRow(); const col = state.map[key]; const raw = row && col ? row[col] : '';
+            if (isUrl(raw)) return raw;                 // image link
+            if (raw) return key === 'qr' ? makeQR(raw) : makeBarcode(raw);
+            // preview with placeholder data
+            return key === 'qr' ? makeQR('PREVIEW') : makeBarcode('123456789');
+        }
+
+        /* drag / resize */
+        function startDrag(e, f) {
+            e.preventDefault();
+            const stage = $('#stage').getBoundingClientRect();
+            dragInfo = { f, type: 'move', sx: e.clientX, sy: e.clientY, ox: f.x, oy: f.y, sw: stage.width, sh: stage.height };
+            document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', endDrag);
+        }
+        function startResize(e, f) {
+            e.preventDefault(); e.stopPropagation();
+            const stage = $('#stage').getBoundingClientRect();
+            dragInfo = { f, type: 'resize', sx: e.clientX, sy: e.clientY, ow: f.w, oh: f.h, sw: stage.width, sh: stage.height };
+            document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', endDrag);
+        }
+        function onDrag(e) {
+            if (!dragInfo) return; const { f, type, sx, sy, sw, sh } = dragInfo;
+            const dx = (e.clientX - sx) / sw * 100, dy = (e.clientY - sy) / sh * 100;
+            if (type === 'move') { f.x = Math.max(2, Math.min(98, dragInfo.ox + dx)); f.y = Math.max(2, Math.min(98, dragInfo.oy + dy)); }
+            else { f.w = Math.max(5, Math.min(98, dragInfo.ow + dx)); f.h = Math.max(3, Math.min(98, dragInfo.oh + dy)); }
+            renderStage();
+        }
+        function endDrag() { dragInfo = null; document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', endDrag); }
+
+        /* =========================================================================
+           TOGGLES + INSPECTOR
+           ========================================================================= */
+        function buildToggles() {
+            const fields = curFields();
+            const wrap = $('#toggles'); wrap.innerHTML = '';
+            Object.values(fields).forEach(f => {
+                const def = FIELD_DEFS.find(d => d.key === f.key);
+                let chip;
+                if (def.type === 'logo') chip = state.logoImg[state.side] ? '✓ image set' : 'upload image';
+                else { const mapped = state.map[f.key]; chip = mapped ? '✓ ' + mapped : 'no column'; }
+                const row = document.createElement('label');
+                row.innerHTML = `<input type="checkbox" ${f.on ? 'checked' : ''}>
+      <span class="nm">${def.name}</span>
+      <span class="chip">${chip}</span>`;
+                row.querySelector('input').onchange = e => { f.on = e.target.checked; if (f.on) selectField(f.key); renderStage(); buildToggles(); };
+                wrap.appendChild(row);
+            });
+            $('#sideLabel').textContent = state.side.toUpperCase();
+        }
+        function selectField(key) { state.sel = key; renderStage(); buildInspector(); }
+        function buildInspector() {
+            const f = curFields()[state.sel];
+            const ins = $('#inspector');
+            if (!f) { ins.innerHTML = '<div class="noedit">Click a field on the badge to edit its font, size, alignment & position.</div>'; return; }
+            const def = FIELD_DEFS.find(d => d.key === f.key);
+            const isText = def.type === 'text';
+            ins.innerHTML = `
+    <h3>Editing <span class="editing-on">${def.name}</span></h3>
+    ${isText ? `
+    <label class="fld">Font family</label>
+    <select id="iFont">${FONTS.map(fn => `<option ${f.font === fn ? 'selected' : ''}>${fn}</option>`).join('')}</select>
+    <label class="fld">Font size <span style="float:right;color:#fff">${f.size} pt</span></label>
+    <div class="rng"><input type="range" id="iSize" min="6" max="48" value="${f.size}"></div>
+    <label class="fld">Weight</label>
+    <select id="iWeight"><option value="400" ${f.weight == 400 ? 'selected' : ''}>Regular</option><option value="600" ${f.weight == 600 ? 'selected' : ''}>Semibold</option><option value="700" ${f.weight == 700 ? 'selected' : ''}>Bold</option><option value="800" ${f.weight == 800 ? 'selected' : ''}>Black</option></select>
+    <label class="fld">Alignment</label>
+    <div class="alignbtns" id="iAlign">
+      ${['left', 'center', 'right'].map(a => `<button data-a="${a}" class="${f.align === a ? 'on' : ''}">${a}</button>`).join('')}
+    </div>
+    <label class="fld">Text colour</label>
+    <div class="swatches" id="iColor">
+      ${COLORS.map(c => `<div class="sw ${f.color === c ? 'on' : ''}" data-c="${c}" style="background:${c};${c === '#ffffff' ? 'border-color:#555' : ''}"></div>`).join('')}
+      <label class="sw custom-sw" title="Pick a custom colour">
+        <input type="color" id="iColorPicker" value="${toHex6(f.color)}">
+      </label>
+    </div>
+    <div class="hexrow">
+      <div class="swatch-preview" id="iHexPreview" style="background:${f.color}"></div>
+      <span>Hex</span>
+      <input type="text" id="iHex" value="${f.color}" maxlength="7" placeholder="#15171c" style="flex:1">
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer;margin-top:12px">
+      <input type="checkbox" id="iUpper" ${f.upper ? 'checked' : ''} style="accent-color:var(--accent2)"> UPPERCASE
+    </label>
+    <label class="fld">Prefix (optional)</label>
+    <input type="text" id="iPrefix" value="${f.prefix || ''}" placeholder="e.g. 'Dr '">
+    `: `
+    <label class="fld">Width <span style="float:right;color:#fff">${Math.round(f.w)}%</span></label>
+    <div class="rng"><input type="range" id="iW" min="10" max="90" value="${f.w}"></div>
+    <label class="fld">Height <span style="float:right;color:#fff">${Math.round(f.h)}%</span></label>
+    <div class="rng"><input type="range" id="iH" min="6" max="80" value="${f.h}"></div>
+    ${def.type === 'logo'
+                    ? `<div class="hint">${state.logoImg[state.side] ? 'This image is the same on every ' + state.side + ' badge. Drag on the canvas to reposition.' : 'Upload a custom image on the left panel first.'}</div>`
+                    : `<div class="hint">This ${def.name} reads from column <b>${state.map[f.key] || '(unmapped)'}</b>. Cells with an <code>https://</code> link draw that image; plain text/numbers are encoded into a ${f.key === 'qr' ? 'QR code' : 'Code128 barcode'} automatically.</div>`}
+    `}
+    <label class="fld">Position</label>
+    <div class="rng">X<input type="range" id="iX" min="2" max="98" value="${f.x}"><span class="v">${Math.round(f.x)}</span></div>
+    <div class="rng">Y<input type="range" id="iY" min="2" max="98" value="${f.y}"><span class="v">${Math.round(f.y)}</span></div>
+  `;
+            const reflect = () => { renderStage(); };
+            if (isText) {
+                $('#iFont').onchange = e => { f.font = e.target.value; reflect(); };
+                $('#iSize').oninput = e => { f.size = +e.target.value; buildInspector(); reflect(); };
+                $('#iWeight').onchange = e => { f.weight = +e.target.value; reflect(); };
+                $$('#iAlign button').forEach(b => b.onclick = () => { f.align = b.dataset.a; buildInspector(); reflect(); });
+                $$('#iColor .sw[data-c]').forEach(s => s.onclick = () => { f.color = s.dataset.c; buildInspector(); reflect(); });
+                // native colour-wheel picker
+                $('#iColorPicker').oninput = e => { f.color = e.target.value; renderStage(); syncColorUI(f.color); };
+                $('#iColorPicker').onchange = () => buildInspector();
+                // hex text field
+                $('#iHex').onchange = e => {
+                    let v = e.target.value.trim();
+                    if (!v.startsWith('#')) v = '#' + v;
+                    if (/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test(v)) {
+                        f.color = v.length === 4 ? '#' + [...v.slice(1)].map(ch => ch + ch).join('') : v.toLowerCase();
+                        buildInspector(); reflect();
+                    } else {
+                        toast('Enter a valid hex code, e.g. #ff0000', 'err');
+                        e.target.value = f.color;
+                    }
+                };
+                $('#iUpper').onchange = e => { f.upper = e.target.checked; reflect(); };
+                $('#iPrefix').oninput = e => { f.prefix = e.target.value; reflect(); };
+            } else {
+                $('#iW').oninput = e => { f.w = +e.target.value; buildInspector(); reflect(); };
+                $('#iH').oninput = e => { f.h = +e.target.value; buildInspector(); reflect(); };
+            }
+            $('#iX').oninput = e => { f.x = +e.target.value; buildInspector(); reflect(); };
+            $('#iY').oninput = e => { f.y = +e.target.value; buildInspector(); reflect(); };
+        }
+        // keep the hex box + preview swatch in sync while dragging the colour wheel
+        function syncColorUI(hex) {
+            const hexInput = $('#iHex'); if (hexInput) hexInput.value = hex;
+            const prev = $('#iHexPreview'); if (prev) prev.style.background = hex;
+        }
+        // normalise any css colour (incl. 3-digit hex) to a 6-digit hex for <input type=color>
+        function toHex6(c) {
+            if (!c) return '#000000';
+            if (/^#[0-9a-fA-F]{6}$/.test(c)) return c;
+            if (/^#[0-9a-fA-F]{3}$/.test(c)) return '#' + [...c.slice(1)].map(ch => ch + ch).join('');
+            return '#000000';
+        }
+
+        /* =========================================================================
+           SIDE TABS, ZOOM, RECORD NAV
+           ========================================================================= */
+        $('#tabFront').onclick = () => switchSide('front');
+        $('#tabBack').onclick = () => switchSide('back');
+        function switchSide(s) {
+            state.side = s; state.sel = null;
+            $('#tabFront').classList.toggle('on', s === 'front');
+            $('#tabBack').classList.toggle('on', s === 'back');
+            updateRatioWarn(); renderStage(); buildToggles(); buildInspector();
+        }
+        $('#zIn').onclick = () => { let z = state.zoom === 'fit' ? .5 : state.zoom; state.zoom = Math.min(1.4, z + .12); renderStage(); };
+        $('#zOut').onclick = () => { let z = state.zoom === 'fit' ? .5 : state.zoom; state.zoom = Math.max(.18, z - .12); renderStage(); };
+        $('#zVal').onclick = () => { state.zoom = 'fit'; renderStage(); };
+        $('#prevRec').onclick = () => { if (!state.rows.length) return; state.rec = (state.rec - 1 + state.rows.length) % state.rows.length; renderStage(); updateRecNav(); };
+        $('#nextRec').onclick = () => { if (!state.rows.length) return; state.rec = (state.rec + 1) % state.rows.length; renderStage(); updateRecNav(); };
+        function updateRecNav() {
+            if (!state.rows.length) { $('#recWho').textContent = 'No data loaded'; return; }
+            const nm = state.map.name ? curRow()[state.map.name] : '';
+            $('#recWho').textContent = `${state.rec + 1} / ${state.rows.length}  ·  ${nm || '(no name)'}`;
+        }
+
+        /* =========================================================================
+           TEMPLATE SAVE / LOAD  (in-memory + download json)
+           ========================================================================= */
+        $('#saveTpl').onclick = () => {
+            const tpl = { fields: state.fields, map: state.map, paper: $('#paper').value, fit: state.fit, logoImg: state.logoImg };
+            const blob = new Blob([JSON.stringify(tpl, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'badge-layout.json'; a.click();
+            toast('Layout downloaded', 'ok');
+        };
+        $('#loadTpl').onclick = () => {
+            const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json';
+            inp.onchange = e => {
+                const r = new FileReader(); r.onload = ev => {
+                    try {
+                        const t = JSON.parse(ev.target.result);
+                        if (t.fields) state.fields = t.fields; if (t.map) Object.assign(state.map, t.map); if (t.paper) $('#paper').value = t.paper;
+                        if (t.fit) { state.fit = t.fit; $('#fitMode').value = t.fit; } if (t.logoImg) state.logoImg = t.logoImg;
+                        refreshLogoDrop();
+                        renderStage(); buildToggles(); buildInspector(); if (state.headers.length) buildMapUI();
+                        toast('Layout loaded', 'ok');
+                    } catch (err) { toast('Bad layout file', 'err'); }
+                }; r.readAsText(e.target.files[0]);
+            };
+            inp.click();
+        };
+
+        /* =========================================================================
+           READY CHECK + EXPORT
+           ========================================================================= */
+        function checkReady() {
+            const ok = state.frontImg && state.rows.length;
+            $('#exportBtn').disabled = !ok;
+            $('#printHint').innerHTML = ok
+                ? `Ready: <b>${state.rows.length}</b> badges. Export builds one PDF, front${state.backImg ? ' & back' : ''}, laid out on your paper.`
+                : `Load <b>front art</b> + <b>data</b> to enable export.`;
+        }
+
+        const PAPERS = {
+            A3: { w: 297, h: 420, grid: { cols: 3, rows: 3 } },   // 9-up
+            A4: { w: 210, h: 297, grid: { cols: 2, rows: 2 } },   // 4-up
+            LETTER: { w: 215.9, h: 279.4, grid: { cols: 2, rows: 2 } }, // 4-up
+        };
+        const GAP = 0; // mm between badges; cut marks handle separation
+        const SHEET_MARGIN = 4; // mm min margin reserved around the badge grid
+
+        // physical badge size in mm.
+        // For A6-ratio artwork we honour the paper's TARGET grid (e.g. 3×3 on A3)
+        // by scaling the badge to the largest size that packs that many while
+        // preserving the exact A6 ratio — so it uses the full page with no
+        // distortion and no cropping.
+        function badgeSizeMM(paper) {
+            const d = state.frontDims;
+            const g = paper.grid || { cols: 1, rows: 1 };
+            const usableW = paper.w - 2 * SHEET_MARGIN;
+            const usableH = paper.h - 2 * SHEET_MARGIN;
+            if (!d || isA6Ratio(d)) {
+                // largest A6-ratio cell that fits cols×rows in the usable area
+                const cellW = (usableW - (g.cols - 1) * GAP) / g.cols;
+                const cellH = (usableH - (g.rows - 1) * GAP) / g.rows;
+                // constrain to A6 ratio (w/h = 0.709)
+                let bw = cellW, bh = bw / A6_RATIO;
+                if (bh > cellH) { bh = cellH; bw = bh * A6_RATIO; }
+                return { w: +bw.toFixed(2), h: +bh.toFixed(2), isA6: true, grid: g };
+            }
+            // non-A6 art: real size at 96 DPI, capped to sheet
+            let mmW = d.w * 25.4 / 96, mmH = d.h * 25.4 / 96;
+            const maxW = paper.w - 10, maxH = paper.h - 10;
+            const sc = Math.min(1, maxW / mmW, maxH / mmH);
+            return { w: +(mmW * sc).toFixed(1), h: +(mmH * sc).toFixed(1), isA6: false };
+        }
+        // how many fit per row/col. For A6 badges we use the paper's target grid
+        // directly (the badge was sized to fit it). For odd-ratio art we measure.
+        function gridFor(paper, bw, bh) {
+            const usableW = paper.w - 2 * SHEET_MARGIN;
+            const usableH = paper.h - 2 * SHEET_MARGIN;
+            const EPS = 0.6; // mm slack for float error
+            const cols = Math.max(1, Math.floor((usableW + GAP + EPS) / (bw + GAP)));
+            const rows = Math.max(1, Math.floor((usableH + GAP + EPS) / (bh + GAP)));
+            return { cols, rows };
+        }
+
+        $('#exportBtn').onclick = () => startExport();
+
+        async function startExport() {
+            const paper = PAPERS[$('#paper').value];
+            const bs = badgeSizeMM(paper);
+            if (!bs.isA6) {
+                const g = gridFor(paper, bs.w, bs.h);
+                const ok = await confirmNonA6(bs, g, paper);
+                if (ok === 'reupload') { overlayClose(); $('#fileFront').click(); return; }
+                if (ok !== 'continue') { overlayClose(); return; }
+            }
+            runExport(bs);
+        }
+
+        // promise-based confirm dialog reusing the overlay
+        function confirmNonA6(bs, g, paper) {
+            return new Promise(res => {
+                const ov = $('#overlay'); ov.classList.add('show');
+                const m = ov.querySelector('.modal');
+                m.innerHTML = `
+      <h2>Artwork isn't <i>A6</i></h2>
+      <p>Your front art is <b>${state.frontDims.w}×${state.frontDims.h}px</b> — that's not the A6 ratio (0.709).<br>
+      At its real size it's about <b>${bs.w} × ${bs.h} mm</b>, so only <b>${g.cols} per row × ${g.rows} rows = ${g.cols * g.rows}</b> fit on ${$('#paper').value}.</p>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn" id="cReupload" style="flex:1">↺ Reupload A6 art</button>
+        <button class="btn primary" id="cContinue" style="flex:1">Continue anyway</button>
+      </div>
+      <p style="margin-top:14px;font-size:11.5px">Tip: for the clean 3×3 layout, re-export your source at 105×148&nbsp;mm.</p>`;
+                $('#cReupload').onclick = () => res('reupload');
+                $('#cContinue').onclick = () => res('continue');
+            });
+        }
+        function overlayClose() { const ov = $('#overlay'); ov.classList.remove('show'); restoreModal(); }
+        function restoreModal() {
+            $('#overlay .modal').innerHTML = `
+    <h2 id="mTitle">Building your <i>badges</i></h2>
+    <p id="mMsg">Rendering codes and laying out pages…</p>
+    <div class="bar"><i id="mBar"></i></div>`;
+        }
+
+        async function runExport(bs) {
+            const { jsPDF } = window.jspdf;
+            const paper = PAPERS[$('#paper').value];
+            const order = $('#order').value;
+            const cutMarks = $('#cutMarks').checked, gapLine = $('#gapLine').checked;
+            const dpi = parseInt($('#quality').value, 10) || 300;
+            const grid = bs.isA6 && bs.grid ? bs.grid : gridFor(paper, bs.w, bs.h);
+            const cols = grid.cols, rows = grid.rows, perPage = cols * rows;
+            restoreModal();
+            const overlay = $('#overlay'); overlay.classList.add('show');
+            const setBar = (p, msg) => { const b = $('#mBar'); if (b) b.style.width = p + '%'; const mm = $('#mMsg'); if (mm && msg) mm.textContent = msg; };
+
+            try {
+                const pdf = new jsPDF({ orientation: paper.w > paper.h ? 'l' : 'p', unit: 'mm', format: [paper.w, paper.h], compress: true });
+                const bw = bs.w, bh = bs.h;
+                const marginX = (paper.w - (cols * bw + (cols - 1) * GAP)) / 2;
+                const marginY = (paper.h - (rows * bh + (rows - 1) * GAP)) / 2;
+
+                const N = state.rows.length;
+                const sides = state.backImg ? ['front', 'back'] : ['front'];
+
+                async function placeSheet(side, startIdx) {
+                    for (let i = 0; i < perPage && (startIdx + i) < N; i++) {
+                        const idx = startIdx + i;
+                        const col = i % cols, rowi = Math.floor(i / cols);
+                        const x = marginX + col * (bw + GAP), y = marginY + rowi * (bh + GAP);
+                        const canvas = await renderBadgeCanvas(idx, side, bw, bh, dpi);
+                        pdf.addImage(canvas.toDataURL('image/jpeg', 0.96), 'JPEG', x, y, bw, bh, undefined, 'SLOW');
+                        if (gapLine) { pdf.setDrawColor(200); pdf.setLineWidth(0.1); pdf.rect(x, y, bw, bh); }
+                        if (cutMarks) drawCutMarks(pdf, x, y, bw, bh);
+                    }
+                }
+
+                let first = true;
+                function newPage() { if (!first) pdf.addPage([paper.w, paper.h], paper.w > paper.h ? 'l' : 'p'); first = false; }
+
+                if (order === 'grouped') {
+                    for (const side of sides) {
+                        for (let s = 0; s < N; s += perPage) {
+                            newPage(); await placeSheet(side, s);
+                            setBar(Math.round(((sides.indexOf(side) * N + s) / (sides.length * N)) * 100), `Laying out ${side} · ${Math.min(s + perPage, N)}/${N}`);
+                            await new Promise(r => setTimeout(r, 4));
+                        }
+                    }
+                } else {
+                    let done = 0, total = Math.ceil(N / perPage) * sides.length;
+                    for (let s = 0; s < N; s += perPage) {
+                        for (const side of sides) { newPage(); await placeSheet(side, s); done++; setBar(Math.round(done / total * 100), `Sheet ${done}/${total}`); await new Promise(r => setTimeout(r, 4)); }
+                    }
+                }
+
+                setBar(100, 'Finishing PDF…');
+                const fname = `badges_${$('#paper').value}_${N}_${dpi}dpi.pdf`;
+                pdf.save(fname);
+                overlay.classList.remove('show');
+                toast(`PDF exported · ${cols}×${rows}=${perPage}/sheet · ${dpi} DPI · ${fname}`, 'ok');
+            } catch (err) {
+                overlay.classList.remove('show');
+                toast('Export failed: ' + err.message, 'err');
+                console.error(err);
+            }
+        }
+
+        // Render one badge (one side, one attendee) to a high-res canvas.
+        // Canvas pixel size is derived from the badge's physical mm size and the
+        // chosen DPI so the rasterised image is genuinely print resolution.
+        async function renderBadgeCanvas(idx, side, bwMM, bhMM, dpi) {
+            const front = state.frontDims;
+            const isA6 = isA6Ratio(front);
+            // mm -> px at target DPI  (px = mm / 25.4 * dpi)
+            const W = Math.max(1, Math.round(bwMM / 25.4 * dpi));
+            const H = Math.max(1, Math.round(bhMM / 25.4 * dpi));
+            const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+            const ctx = cv.getContext('2d');
+            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+            // background art — fills the FULL badge area
+            const img = side === 'front' ? state.frontImg : state.backImg;
+            if (img) {
+                const bg = await loadImg(img);
+                if (isA6) drawFitted(ctx, bg, W, H, state.fit);  // fit mode only relevant in A6 cells
+                else ctx.drawImage(bg, 0, 0, W, H);             // native ratio: draw whole, no crop
+            }
+
+            const row = state.rows[idx];
+            const fields = Object.values(state.fields[side]).filter(f => f.on);
+            for (const f of fields) {
+                const bx = (f.x - f.w / 2) / 100 * W, by = (f.y - f.h / 2) / 100 * H, bw = f.w / 100 * W, bh = f.h / 100 * H;
+                const def = FIELD_DEFS.find(d => d.key === f.key);
+                if (def.type === 'logo') {
+                    const url = state.logoImg[side];
+                    if (!url) continue;
+                    try {
+                        const im = await loadImg(url);
+                        const ar = im.naturalWidth / im.naturalHeight, br = bw / bh;
+                        let dw, dh; if (ar > br) { dw = bw; dh = bw / ar; } else { dh = bh; dw = bh * ar; }
+                        ctx.drawImage(im, bx + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh);
+                    } catch (e) { }
+                    continue;
+                }
+                if (def.type === 'text') {
+                    let v = state.map[f.key] ? (row[state.map[f.key]] || '') : '';
+                    if (f.upper) v = v.toUpperCase(); if (f.prefix) v = f.prefix + v;
+                    if (!v) continue;
+                    ctx.fillStyle = f.color;
+                    ctx.textBaseline = 'middle';
+                    ctx.textAlign = f.align;
+                    // identical pt formula: f.size pt on A6 (148mm≈419.5pt) scaled to canvas height H
+                    let fs = f.size / 419.5 * H;
+                    ctx.font = `${f.weight} ${fs}px '${f.font}',sans-serif`;
+                    // shrink only if it overflows the box width
+                    let guard = 0;
+                    while (ctx.measureText(v).width > bw && fs > 6 && guard < 60) { fs *= 0.96; ctx.font = `${f.weight} ${fs}px '${f.font}',sans-serif`; guard++; }
+                    const tx = f.align === 'left' ? bx : f.align === 'right' ? bx + bw : bx + bw / 2;
+                    ctx.fillText(v, tx, by + bh / 2);
+                } else {
+                    const raw = state.map[f.key] ? (row[state.map[f.key]] || '') : '';
+                    let src;
+                    if (isUrl(raw)) src = raw;
+                    else if (raw) src = f.key === 'qr' ? makeQR(raw) : makeBarcode(raw);
+                    else continue;
+                    try {
+                        const im = await loadImg(src);
+                        // keep aspect for QR (square), fill width for barcode
+                        if (f.key === 'qr') {
+                            const s = Math.min(bw, bh); ctx.drawImage(im, bx + (bw - s) / 2, by + (bh - s) / 2, s, s);
+                        } else { ctx.drawImage(im, bx, by, bw, bh); }
+                    } catch (e) { /* skip broken image link (CORS etc) */ }
+                }
+            }
+            return cv;
+        }
+        const _imgcache = {};
+        function loadImg(src) {
+            if (_imgcache[src]) return Promise.resolve(_imgcache[src]);
+            return new Promise((res, rej) => {
+                const im = new Image(); im.crossOrigin = 'anonymous';
+                im.onload = () => { _imgcache[src] = im; res(im); }; im.onerror = rej; im.src = src;
+            });
+        }
+        function drawFitted(ctx, img, W, H, mode) {
+            const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+            const ar = iw / ih, cr = W / H;
+            if (mode === 'stretch') { ctx.drawImage(img, 0, 0, W, H); return; }
+            if (mode === 'contain') {
+                let dw, dh; if (ar > cr) { dw = W; dh = W / ar; } else { dh = H; dw = H * ar; }
+                ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh); return;
+            }
+            // fill (cover): crop overflow
+            let sw, sh, sx, sy;
+            if (ar > cr) { sh = ih; sw = ih * cr; sx = (iw - sw) / 2; sy = 0; }
+            else { sw = iw; sh = iw / cr; sx = 0; sy = (ih - sh) / 2; }
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+        }
+        function drawCutMarks(pdf, x, y, bw, bh) {
+            bw = bw || A6.w; bh = bh || A6.h;
+            pdf.setDrawColor(60); pdf.setLineWidth(0.15); const m = 3;
+            const cs = [[x, y], [x + bw, y], [x, y + bh], [x + bw, y + bh]];
+            cs.forEach(([cx, cy]) => { pdf.line(cx - m, cy, cx - 0.5, cy); pdf.line(cx + 0.5, cy, cx + m, cy); pdf.line(cx, cy - m, cx, cy - 0.5); pdf.line(cx, cy + 0.5, cx, cy + m); });
+        }
+
+        /* =========================================================================
+           INIT
+           ========================================================================= */
+        window.addEventListener('resize', () => { if (state.zoom === 'fit') renderStage(); });
+        buildToggles(); buildInspector(); renderStage(); updateRecNav(); checkReady();
+        // deselect on stage background click
+        $('#stage').addEventListener('mousedown', e => { if (e.target.id === 'stage') { state.sel = null; renderStage(); buildInspector(); } });
+    </script>
+</body>
+
+</html>

@@ -350,6 +350,21 @@
             font-size: 10.5px
         }
 
+        .note {
+            background: #2a2412;
+            border: 1px solid #5e4c1c;
+            color: #e8d9a8;
+            border-radius: 9px;
+            padding: 10px 12px;
+            font-size: 11.5px;
+            line-height: 1.55;
+            margin-top: 10px
+        }
+
+        .note b {
+            color: #ffd978
+        }
+
         .pill {
             display: inline-block;
             font-size: 10px;
@@ -811,6 +826,10 @@
             margin-bottom: 18px
         }
 
+        .modal p b {
+            color: #e8e9ec
+        }
+
         .bar {
             height: 9px;
             background: #13151a;
@@ -971,12 +990,14 @@
                         <div class="ic">▦</div>
                         <div class="t">Drop <b>CSV / XLSX</b> or browse</div>
                     </div>
+                    <div class="hint">For photos, upload the <b>.xlsx</b> (Sheets → File → Download → Microsoft Excel).
+                        CSV files lose the hidden links behind "View Image" cells.</div>
                 </div>
 
                 <div id="paneLink" class="hidden">
                     <label class="fld">Published Google Sheet link</label>
                     <input type="url" id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…">
-                    <div class="hint">In Sheets: <code>File → Share → Publish to web</code> (CSV), then paste the link.
+                    <div class="hint">In Sheets: <code>File → Share → Publish to web</code>, then paste the link.
                         Private sheets won't load — export & upload instead.</div>
                     <button class="btn primary" id="loadSheet" style="width:100%;margin-top:10px">Load sheet</button>
                 </div>
@@ -990,6 +1011,11 @@
                 <div class="hint" id="codeHint">
                     QR / barcode columns accept either an <b>image link</b> (https://…png) or <b>raw text/number</b> to
                     encode automatically.
+                </div>
+                <div class="note hidden" id="driveNote">
+                    ⚠ <b>Google Drive photos must be shared.</b> In Drive, right-click the photo folder (or each image)
+                    → <b>Share</b> → General access → <b>Anyone with the link</b> → <b>Viewer</b>. Private files will
+                    show as a grey placeholder and won't print.
                 </div>
             </div>
         </div>
@@ -1086,6 +1112,7 @@
 
         // every placeable field
         const FIELD_DEFS = [
+            { key: 'photo', name: 'Photo', type: 'photo', sides: ['front', 'back'] },
             { key: 'qr', name: 'QR Code', type: 'code', sides: ['front', 'back'] },
             { key: 'name', name: 'Name', type: 'text', sides: ['front'] },
             { key: 'barcode', name: 'Barcode', type: 'code', sides: ['front'] },
@@ -1100,16 +1127,20 @@
         // default placement per side (percentages 0-100 of A6)
         function defaultField(key, side) {
             const def = FIELD_DEFS.find(f => f.key === key);
-            const boxy = def.type === 'code' || def.type === 'logo';
+            const boxy = def.type === 'code' || def.type === 'logo' || def.type === 'photo';
             const base = {
                 key, side, on: false,
                 x: 50, y: 50, w: 50, h: boxy ? 34 : 10,
                 font: 'Archivo', size: key === 'name' ? 26 : 14, weight: 700,
-                align: 'center', color: '#15171c', upper: false, prefix: ''
+                align: 'center', color: '#15171c', upper: false, prefix: '',
+                // photo-only options
+                shape: 'rect', pfit: 'cover', focus: 30, bw: 0, ph: true
             };
             // sensible presets resembling the sample badges
             const P = {
                 front: {
+                    // photo box is 3:4 portrait: 36% of 105mm = 37.8mm wide, 34% of 148mm = 50.3mm tall
+                    photo: { on: false, x: 50, y: 30, w: 36, h: 34, color: '#ffffff' },
                     name: { on: true, x: 50, y: 54, w: 84, h: 9, size: 22, align: 'center', weight: 800 },
                     barcode: { on: true, x: 50, y: 66, w: 60, h: 11 },
                     qr: { on: false, x: 50, y: 64, w: 42, h: 30 },
@@ -1121,6 +1152,7 @@
                     logo: { on: false, x: 78, y: 90, w: 22, h: 14 },
                 },
                 back: {
+                    photo: { on: false, x: 50, y: 30, w: 36, h: 34, color: '#ffffff' },
                     qr: { on: true, x: 50, y: 55, w: 52, h: 37 },
                     logo: { on: false, x: 50, y: 88, w: 30, h: 12 },
                 }
@@ -1134,7 +1166,7 @@
             logoImg: { front: null, back: null },       // shared custom image per side
             fit: 'fill',                            // fill | contain | stretch
             rows: [], headers: [],
-            map: { name: '', qr: '', barcode: '', inst: '', city: '', deltype: '', regtype: '', serial: '' },
+            map: { name: '', photo: '', qr: '', barcode: '', inst: '', city: '', deltype: '', regtype: '', serial: '' },
             fields: { front: {}, back: {} },
             side: 'front', sel: null, rec: 0, zoom: 'fit', src: 'upload',
             customCodes: {}, // rowIndex+key -> dataURL (custom uploads, future hook)
@@ -1163,6 +1195,8 @@
             });
         }
         function isUrl(s) { return /^https?:\/\//i.test((s || '').trim()); }
+        const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const nameOf = i => (state.map.name && state.rows[i] && state.rows[i][state.map.name]) || ('Row ' + (i + 1));
 
         // generate a QR dataURL (uses qrcodejs into hidden div)
         const _qrcache = {};
@@ -1186,6 +1220,201 @@
             try { JsBarcode(cv, text, { format: 'CODE128', displayValue: false, margin: 0, height: 160, width: 3 }); }
             catch (e) { JsBarcode(cv, '0', { format: 'CODE128', displayValue: false, margin: 0, height: 160, width: 3 }); }
             const url = cv.toDataURL('image/png'); _bcache[text] = url; return url;
+        }
+
+        /* =========================================================================
+           PHOTO HELPERS  (Google Drive links, preview, export, drawing)
+           ========================================================================= */
+        const SILHOUETTE = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="#cfd5df"/><circle cx="50" cy="38" r="17" fill="#9aa3b2"/><path d="M14 100c0-24 16-38 36-38s36 14 36 38z" fill="#9aa3b2"/></svg>');
+
+        function driveId(u) {
+            u = u || '';
+            const m = u.match(/\/file\/d\/([\w-]{10,})/) || u.match(/[?&]id=([\w-]{10,})/) ||
+                u.match(/googleusercontent\.com\/d\/([\w-]{10,})/);
+            return m ? m[1] : '';
+        }
+        // ordered list of URLs to try for one photo link
+        function photoCandidates(link, w) {
+            const id = driveId(link);
+            if (id) return [
+                `https://lh3.googleusercontent.com/d/${id}=w${w}`,
+                `https://drive.google.com/thumbnail?id=${id}&sz=w${w}`,
+                `https://drive.usercontent.google.com/download?id=${id}&export=view`,
+                `https://drive.google.com/uc?export=view&id=${id}`
+            ];
+            return [link];
+        }
+        // the photo URL for a row: hidden hyperlink first, else the cell text if it's a URL
+        function photoLink(row) {
+            const col = state.map.photo;
+            if (!row || !col) return '';
+            return (row.__links && row.__links[col]) || (isUrl(row[col]) ? row[col].trim() : '');
+        }
+
+        /* ---- preview (plain <img>, no CORS needed) ---- */
+        const _prevOk = {}, _prevBad = {};
+        function addTag(wrap, msg) {
+            const t = document.createElement('div'); t.className = 'ph-mini';
+            t.style.cssText = 'position:absolute;left:0;right:0;bottom:3px;background:rgba(0,0,0,.5);color:#fff;padding:1px 0';
+            t.textContent = msg; wrap.appendChild(t);
+        }
+        function showSilhouette(im, wrap, f, msg) {
+            im.onload = im.onerror = null;
+            if (f.ph !== false) { im.style.display = 'block'; im.style.objectFit = 'cover'; im.style.objectPosition = '50% 50%'; im.src = SILHOUETTE; }
+            else im.style.display = 'none';
+            addTag(wrap, msg);
+        }
+        function setPreviewSrc(im, link, wrap, f) {
+            if (_prevOk[link]) { im.src = _prevOk[link]; return; }
+            if (_prevBad[link]) { showSilhouette(im, wrap, f, 'photo not accessible'); return; }
+            const c = photoCandidates(link, 600); let i = 0;
+            im.onload = () => { _prevOk[link] = im.src; };
+            im.onerror = () => {
+                i++;
+                if (i < c.length) im.src = c[i];
+                else { _prevBad[link] = true; showSilhouette(im, wrap, f, 'photo not accessible'); }
+            };
+            im.src = c[0];
+        }
+
+        /* ---- export (needs CORS so the canvas isn't tainted) ---- */
+        function tryLoadCORS(src, ms = 25000) {
+            return new Promise((res, rej) => {
+                const im = new Image(); im.crossOrigin = 'anonymous'; im.referrerPolicy = 'no-referrer';
+                const t = setTimeout(() => rej(new Error('timeout')), ms);
+                im.onload = () => { clearTimeout(t); res(im); };
+                im.onerror = () => { clearTimeout(t); rej(new Error('fail')); };
+                im.src = src;
+            });
+        }
+        async function probePhoto(link) {
+            for (const c of photoCandidates(link, 160)) { try { await tryLoadCORS(c, 15000); return true; } catch (e) { } }
+            return false;
+        }
+        const _photoLRU = new Map(); // small cache so we don't hold hundreds of decoded photos in memory
+        function loadPhotoExport(link) {
+            if (_photoLRU.has(link)) return _photoLRU.get(link);
+            const p = (async () => {
+                for (const c of photoCandidates(link, 1200)) { try { return await tryLoadCORS(c); } catch (e) { } }
+                return null;
+            })();
+            _photoLRU.set(link, p);
+            if (_photoLRU.size > 40) _photoLRU.delete(_photoLRU.keys().next().value);
+            return p;
+        }
+
+        function pathShape(ctx, x, y, w, h, shape) {
+            ctx.beginPath();
+            if (shape === 'circle') ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+            else if (shape === 'rounded') {
+                const r = Math.min(w, h) * 0.1;
+                ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+                ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+            } else ctx.rect(x, y, w, h);
+        }
+        function drawBorder(ctx, x, y, w, h, f, H) {
+            if (!(f.bw > 0)) return;
+            const bp = f.bw / 148 * H;
+            pathShape(ctx, x + bp / 2, y + bp / 2, w - bp, h - bp, f.shape);
+            ctx.lineWidth = bp; ctx.strokeStyle = f.color; ctx.stroke();
+        }
+        function drawPhoto(ctx, im, x, y, w, h, f, H) {
+            ctx.save(); pathShape(ctx, x, y, w, h, f.shape); ctx.clip();
+            const iw = im.naturalWidth, ih = im.naturalHeight; let s, dw, dh, dx, dy;
+            if (f.pfit === 'contain') { s = Math.min(w / iw, h / ih); dw = iw * s; dh = ih * s; dx = x + (w - dw) / 2; dy = y + (h - dh) / 2; }
+            else { s = Math.max(w / iw, h / ih); dw = iw * s; dh = ih * s; dx = x + (w - dw) / 2; dy = y + (h - dh) * (f.focus / 100); }
+            ctx.drawImage(im, dx, dy, dw, dh); ctx.restore();
+            drawBorder(ctx, x, y, w, h, f, H);
+        }
+        // grey silhouette used when a photo is missing / can't be loaded
+        function drawPlaceholder(ctx, x, y, w, h, f, H) {
+            ctx.save(); pathShape(ctx, x, y, w, h, f.shape); ctx.clip();
+            ctx.fillStyle = '#cfd5df'; ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = '#9aa3b2';
+            const m = Math.min(w, h);
+            ctx.beginPath(); ctx.arc(x + w / 2, y + h * 0.38, m * 0.17, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.98, w * 0.36, h * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+            drawBorder(ctx, x, y, w, h, f, H);
+        }
+
+        // inspector pieces for the photo field
+        function ratioPresetHTML(f) {
+            const r = (f.w * A6.w) / (f.h * A6.h);
+            const P = [['', 'Custom (drag / sliders)'], ['0.75', 'Passport portrait 3:4'], ['1', 'Square 1:1'], ['0.8', 'Portrait 4:5'], ['1.3333', 'Landscape 4:3']];
+            const cur = P.find(p => p[0] && Math.abs(+p[0] - r) < 0.03);
+            return `<label class="fld">Box proportion</label>
+    <select id="iRatio">${P.map(([v, l]) => `<option value="${v}" ${(cur ? cur[0] : '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+        }
+        function photoControlsHTML(f) {
+            return `
+    <label class="fld">Shape</label>
+    <select id="iShape">${[['rect', 'Rectangle'], ['rounded', 'Rounded corners'], ['circle', 'Circle / oval']].map(([v, l]) => `<option value="${v}" ${f.shape === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <label class="fld">Photo fit</label>
+    <select id="iPFit"><option value="cover" ${f.pfit !== 'contain' ? 'selected' : ''}>Fill box — crop edges</option><option value="contain" ${f.pfit === 'contain' ? 'selected' : ''}>Show whole photo</option></select>
+    <label class="fld">Crop focus (vertical) <span id="iFocusV" style="float:right;color:#fff">${f.focus}%</span></label>
+    <div class="rng"><input type="range" id="iFocus" min="0" max="100" value="${f.focus}"></div>
+    <label class="fld">Border <span id="iBWV" style="float:right;color:#fff">${f.bw} mm</span></label>
+    <div class="rng"><input type="range" id="iBW" min="0" max="4" step="0.25" value="${f.bw}"></div>
+    <label class="fld">Border colour</label>
+    <input type="color" id="iBC" value="${toHex6(f.color)}" style="width:100%;height:34px;border:1px solid var(--line2);border-radius:8px;background:#13151a;padding:2px;cursor:pointer">
+    <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer;margin-top:12px">
+      <input type="checkbox" id="iPH" ${f.ph !== false ? 'checked' : ''} style="accent-color:var(--accent2)"> Grey silhouette if photo is missing
+    </label>`;
+        }
+
+        /* ---- dialogs ---- */
+        const DRIVE_HOWTO = `In Google Drive, right-click the photo folder (or each image) → <b>Share</b> → General access → <b>Anyone with the link</b> → <b>Viewer</b>.`;
+        let driveAlertShown = false;
+        function showDriveAlert() {
+            if (driveAlertShown) return; driveAlertShown = true;
+            const ov = $('#overlay'); ov.classList.add('show');
+            ov.querySelector('.modal').innerHTML = `
+      <h2>Share your <i>Drive</i> photos</h2>
+      <p style="text-align:left">Your sheet links to photos in Google Drive. This page can't use your Google login, so the photos only appear if they are public-by-link.<br><br>${DRIVE_HOWTO}<br><br>Photos that aren't shared show a grey placeholder and can't be printed.</p>
+      <div style="display:flex;gap:10px">
+        <button class="btn" id="daOk" style="flex:1">Got it</button>
+        <button class="btn primary" id="daTest" style="flex:1">Test photo links</button>
+      </div>`;
+            $('#daOk').onclick = overlayClose;
+            $('#daTest').onclick = () => { overlayClose(); testPhotoLinks(); };
+        }
+        function showReport(title, items, usedPlaceholder) {
+            const ov = $('#overlay'); ov.classList.add('show');
+            ov.querySelector('.modal').innerHTML = `<h2>${esc(title)}</h2>
+      <p style="text-align:left">The PDF was still exported, but these badges ${usedPlaceholder ? 'got a grey placeholder instead of a photo' : 'have an empty photo area'}. The usual cause is that the Drive file isn't shared as <b>Anyone with the link</b>.</p>
+      <div style="text-align:left;max-height:240px;overflow:auto;font-size:12px;color:#cfd3da;background:#13151a;border:1px solid var(--line2);border-radius:8px;padding:10px;margin-bottom:16px;line-height:1.7">${items.map(esc).join('<br>')}</div>
+      <button class="btn primary" id="rpOk" style="width:100%">OK</button>`;
+            $('#rpOk').onclick = overlayClose;
+        }
+        let exportMissing = {};
+
+        // before exporting: check a few photos actually load; if none do, warn
+        async function preflightPhotos() {
+            const need = ['front', 'back'].some(s => state.fields[s].photo && state.fields[s].photo.on && (s === 'front' || state.backImg));
+            if (!need || !state.map.photo) return true;
+            const links = state.rows.map(photoLink).filter(Boolean);
+            if (!links.length) return true;
+            const sample = [...new Set([links[0], links[Math.floor(links.length / 2)], links[links.length - 1]])];
+            const ov = $('#overlay'); ov.classList.add('show');
+            ov.querySelector('.modal').innerHTML = `<h2>Checking <i>photos</i></h2><p>Making sure the photo links are reachable…</p><div class="bar"><i style="width:60%"></i></div>`;
+            let ok = false;
+            for (const l of sample) { if (await probePhoto(l)) { ok = true; break; } }
+            overlayClose();
+            if (ok) return true;
+            return new Promise(res => {
+                ov.classList.add('show');
+                ov.querySelector('.modal').innerHTML = `
+        <h2>Photos can't be <i>loaded</i></h2>
+        <p style="text-align:left">None of the sampled photo links could be read. If they're in Google Drive they must be shared:<br><br>${DRIVE_HOWTO}<br><br>You can run <b>Test photo links</b> to see which rows fail. If you export now, every badge gets a grey placeholder${state.fields.front.photo.ph === false ? ' (or a blank area, since placeholder is off)' : ''}.</p>
+        <div style="display:flex;gap:10px">
+          <button class="btn" id="pfCancel" style="flex:1">Cancel</button>
+          <button class="btn primary" id="pfGo" style="flex:1">Export anyway</button>
+        </div>`;
+                $('#pfCancel').onclick = () => { overlayClose(); res(false); };
+                $('#pfGo').onclick = () => { overlayClose(); res(true); };
+            });
         }
 
         /* =========================================================================
@@ -1249,61 +1478,132 @@
         });
 
         /* =========================================================================
-           DATA — upload or sheet link
+           DATA — upload or sheet link  (keeps hidden hyperlinks for photo column)
            ========================================================================= */
         $('#srcUpload').onclick = () => { state.src = 'upload'; $('#srcUpload').classList.add('on'); $('#srcLink').classList.remove('on'); $('#paneUpload').classList.remove('hidden'); $('#paneLink').classList.add('hidden'); };
         $('#srcLink').onclick = () => { state.src = 'link'; $('#srcLink').classList.add('on'); $('#srcUpload').classList.remove('on'); $('#paneLink').classList.remove('hidden'); $('#paneUpload').classList.add('hidden'); };
 
         wireDrop('#dropData', '#fileData', f => parseDataFile(f));
+
+        function isHttp(u) { return /^https?:\/\//i.test((u || '').trim()); }
+
+        // sheet -> text grid + a parallel grid of hyperlink targets
+        function wsToTable(ws) {
+            if (!ws || !ws['!ref']) return { arr: [], links: [] };
+            const rg = XLSX.utils.decode_range(ws['!ref']);
+            const arr = [], links = [];
+            for (let R = rg.s.r; R <= rg.e.r; R++) {
+                const a = [], l = [];
+                for (let C = rg.s.c; C <= rg.e.c; C++) {
+                    const c = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+                    let txt = '', url = '';
+                    if (c) {
+                        txt = String(c.v != null ? c.v : (c.w != null ? c.w : ''));
+                        if (c.l && c.l.Target) url = c.l.Target;
+                        else if (c.f) { const m = String(c.f).match(/HYPERLINK\(\s*"([^"]+)"/i); if (m) url = m[1]; }
+                        if (!url && isHttp(txt)) url = txt.trim();
+                        if (!isHttp(url)) url = '';       // drop mailto:, tel:, etc.
+                    }
+                    a.push(txt); l.push(url);
+                }
+                arr.push(a); links.push(l);
+            }
+            return { arr, links };
+        }
+        function ingestWorkbook(wb) {
+            const t = wsToTable(wb.Sheets[wb.SheetNames[0]]);
+            ingestRows(t.arr, t.links);
+        }
         function parseDataFile(file) {
             const r = new FileReader();
             r.onload = e => {
-                try {
-                    const wb = XLSX.read(e.target.result, { type: 'binary' });
-                    const ws = wb.Sheets[wb.SheetNames[0]];
-                    const json = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false });
-                    ingestRows(json);
-                } catch (err) { toast('Could not read file: ' + err.message, 'err'); }
+                try { ingestWorkbook(XLSX.read(e.target.result, { type: 'binary' })); }
+                catch (err) { toast('Could not read file: ' + err.message, 'err'); }
             };
             r.readAsBinaryString(file);
         }
         $('#loadSheet').onclick = async () => {
             const u = $('#sheetUrl').value.trim();
             if (!u) { toast('Paste a sheet link first', 'err'); return; }
-            const csv = toCsvUrl(u);
-            if (!csv) { toast('That doesn\'t look like a Sheets link', 'err'); return; }
+            const urls = toSheetUrls(u);
+            if (!urls) { toast('That doesn\'t look like a Sheets link', 'err'); return; }
+            $('#dataStatus').innerHTML = 'Fetching…';
             try {
-                $('#dataStatus').innerHTML = 'Fetching…';
-                const res = await fetch(csv); if (!res.ok) throw new Error('HTTP ' + res.status);
-                const text = await res.text();
-                const wb = XLSX.read(text, { type: 'string' });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                ingestRows(XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false }));
+                let wb, csv = false;
+                try {   // xlsx keeps hyperlinks (needed for photos)
+                    const res = await fetch(urls.xlsx); if (!res.ok) throw new Error('HTTP ' + res.status);
+                    wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+                } catch (e1) {
+                    const res = await fetch(urls.csv); if (!res.ok) throw new Error('HTTP ' + res.status);
+                    wb = XLSX.read(await res.text(), { type: 'string' }); csv = true;
+                }
+                ingestWorkbook(wb);
+                if (csv) $('#dataStatus').innerHTML += '<br><span style="color:var(--gold)">Loaded as CSV — hyperlinks are not included, so "View Image" cells have no photo link. Upload the .xlsx instead.</span>';
             } catch (err) {
                 $('#dataStatus').innerHTML = '';
                 toast('Fetch failed — is the sheet "Published to web"? ' + err.message, 'err');
             }
         };
-        function toCsvUrl(u) {
-            const m = u.match(/\/d\/([a-zA-Z0-9-_]+)/) || u.match(/\/d\/e\/([a-zA-Z0-9-_]+)/);
-            if (/\/pub/.test(u)) { // already a published link
-                return u.replace(/pubhtml.*/, 'pub?output=csv').replace(/\/pub\b(?!.*output)/, '/pub?output=csv');
+        function toSheetUrls(u) {
+            if (/\/pub/.test(u)) {
+                const base = u.split('?')[0].replace(/pubhtml$/, 'pub');
+                const gid = (u.match(/[#&?]gid=(\d+)/) || [])[1];
+                return { xlsx: `${base}?output=xlsx`, csv: `${base}?output=csv${gid ? `&gid=${gid}&single=true` : ''}` };
             }
-            if (!m) return null;
+            const m = u.match(/\/d\/([a-zA-Z0-9-_]+)/); if (!m) return null;
             const gid = (u.match(/[#&?]gid=(\d+)/) || [])[1] || '0';
-            return `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv&gid=${gid}`;
+            return {
+                xlsx: `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=xlsx`,
+                csv: `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv&gid=${gid}`
+            };
         }
-        function ingestRows(arr) {
+        function ingestRows(arr, links) {
             if (!arr || !arr.length) { toast('No rows found', 'err'); return; }
-            state.headers = arr[0].map(h => (h || '').toString().trim());
-            state.rows = arr.slice(1).filter(r => r.some(c => c !== '' && c != null)).map(r => {
-                const o = {}; state.headers.forEach((h, i) => o[h] = r[i] != null ? r[i].toString() : ''); return o;
-            });
+            state.headers = arr[0].map(h => (h == null ? '' : h).toString().trim());
+            state.rows = [];
+            for (let r = 1; r < arr.length; r++) {
+                const cells = arr[r];
+                if (!cells.some(c => c !== '' && c != null)) continue;
+                const o = {}, lk = {};
+                state.headers.forEach((h, i) => {
+                    o[h] = cells[i] != null ? cells[i].toString() : '';
+                    const l = links && links[r] && links[r][i]; if (l) lk[h] = l;
+                });
+                Object.defineProperty(o, '__links', { value: lk, enumerable: false });
+                state.rows.push(o);
+            }
             state.rec = 0;
-            $('#dataStatus').innerHTML = `<b>${state.rows.length}</b> attendees · ${state.headers.length} columns`;
             autoMap(); buildMapUI(); $('#mapSec').classList.remove('hidden');
-            renderStage(); updateRecNav(); checkReady();
-            toast(state.rows.length + ' attendees loaded', 'ok');
+            const hasDrive = updatePhotoStatus();
+            buildToggles(); renderStage(); updateRecNav(); checkReady();
+            toast(state.rows.length + ' attendees loaded' + (state.map.photo ? ' · photo column found — switch on "Photo" at right' : ''), 'ok');
+            if (hasDrive) showDriveAlert();
+        }
+        // status line + Drive-sharing note. returns true if photo links point at Google Drive
+        function updatePhotoStatus() {
+            if (!state.rows.length) return false;
+            let html = `<b>${state.rows.length}</b> attendees · ${state.headers.length} columns`;
+            const col = state.map.photo;
+            let hasDrive = false;
+            if (col) {
+                const n = state.rows.filter(r => photoLink(r)).length;
+                hasDrive = state.rows.some(r => driveId(photoLink(r)));
+                html += ` · <b>${n}</b> photo links`;
+                if (n < state.rows.length) html += `<br><span style="color:var(--gold)">⚠ ${state.rows.length - n} rows have no usable link in “${esc(col)}”.${n === 0 ? ' If the sheet came in as CSV, hyperlinks are dropped — upload the .xlsx.' : ''}</span>`;
+            }
+            $('#dataStatus').innerHTML = html;
+            $('#driveNote').classList.toggle('hidden', !hasDrive);
+            return hasDrive;
+        }
+        function detectPhotoCol() {
+            const kw = ['photo', 'image', 'picture', 'pic', 'img', 'link', 'url'];
+            const norm = h => h.toLowerCase().replace(/[^a-z]/g, '');
+            const ratio = h => state.rows.length ? state.rows.filter(r => (r.__links && r.__links[h]) || isUrl(r[h])).length / state.rows.length : 0;
+            const byName = state.headers.filter(h => h && kw.some(k => norm(h).includes(k)));
+            const pool = byName.length ? byName : state.headers.filter(Boolean);
+            let best = '', bestScore = 0.3;
+            pool.forEach(h => { const s = ratio(h) + (byName.includes(h) ? 0.01 : 0); if (s > bestScore) { best = h; bestScore = s; } });
+            return best || byName[0] || '';
         }
         function autoMap() {
             const find = (...keys) => state.headers.find(h => keys.some(k => h.toLowerCase().replace(/[^a-z]/g, '').includes(k))) || '';
@@ -1315,13 +1615,36 @@
             state.map.deltype = find('delegatetype', 'delegate', 'category');
             state.map.regtype = find('regtype', 'registration', 'reg');
             state.map.serial = find('serial', 'sno', 'id', 'regno');
+            state.map.photo = detectPhotoCol();
         }
         function buildMapUI() {
-            const labels = { name: 'Name', qr: 'QR data', barcode: 'Barcode', inst: 'Institution', city: 'City', deltype: 'Delegate Type', regtype: 'Reg Type', serial: 'Serial No' };
-            const opts = k => `<option value="">— none —</option>` + state.headers.map(h => `<option value="${h}" ${state.map[k] === h ? 'selected' : ''}>${h}</option>`).join('');
+            const labels = { name: 'Name', photo: 'Photo link', qr: 'QR data', barcode: 'Barcode', inst: 'Institution', city: 'City', deltype: 'Delegate Type', regtype: 'Reg Type', serial: 'Serial No' };
+            const opts = k => `<option value="">— none —</option>` + state.headers.filter(Boolean).map(h => `<option value="${esc(h)}" ${state.map[k] === h ? 'selected' : ''}>${esc(h)}</option>`).join('');
             $('#mapRows').innerHTML = Object.keys(labels).map(k =>
-                `<div class="maprow"><span>${labels[k]}</span><select data-map="${k}">${opts(k)}</select></div>`).join('');
-            $$('#mapRows select').forEach(sel => sel.onchange = e => { state.map[e.target.dataset.map] = e.target.value; renderStage(); });
+                `<div class="maprow"><span>${labels[k]}</span><select data-map="${k}">${opts(k)}</select></div>`).join('') +
+                `<button class="btn" id="testPhotos" style="width:100%;margin-top:6px">Test photo links</button><div class="hint" id="photoTestOut"></div>`;
+            $$('#mapRows select').forEach(sel => sel.onchange = e => {
+                state.map[e.target.dataset.map] = e.target.value;
+                updatePhotoStatus(); buildToggles(); renderStage();
+            });
+            $('#testPhotos').onclick = testPhotoLinks;
+        }
+        async function testPhotoLinks() {
+            const out = $('#photoTestOut');
+            if (!state.map.photo) { out.textContent = 'Pick the Photo link column first.'; return; }
+            const jobs = state.rows.map((r, i) => ({ i, link: photoLink(r) }));
+            const bad = []; let next = 0, done = 0;
+            async function worker() {
+                while (next < jobs.length) {
+                    const j = jobs[next++];
+                    if (!j.link) bad.push(`#${j.i + 1} ${nameOf(j.i)} — no link`);
+                    else if (!(await probePhoto(j.link))) bad.push(`#${j.i + 1} ${nameOf(j.i)} — can't load (not shared?)`);
+                    out.textContent = `Testing… ${++done}/${jobs.length}`;
+                }
+            }
+            await Promise.all(Array.from({ length: 6 }, worker));
+            out.innerHTML = `<span style="color:var(--ok)">✓ ${jobs.length - bad.length} OK</span>` +
+                (bad.length ? ` · <span style="color:var(--gold)">✗ ${bad.length} failed</span><details><summary>Show</summary>${bad.map(esc).join('<br>')}</details><div class="hint">Drive photos must be shared as <b>Anyone with the link → Viewer</b>.</div>` : '');
         }
 
         /* =========================================================================
@@ -1403,6 +1726,25 @@
                     const url = state.logoImg[state.side];
                     if (url) { const im = document.createElement('img'); im.src = url; im.style.objectFit = 'contain'; box.appendChild(im); }
                     else { const p = document.createElement('div'); p.className = 'ph-mini'; p.textContent = 'no image — upload on left'; box.appendChild(p); }
+                } else if (def.type === 'photo') {
+                    const wrap = document.createElement('div');
+                    wrap.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;pointer-events:none';
+                    const rpx = Math.min(f.w / 100 * W, f.h / 100 * H) * 0.1;
+                    wrap.style.borderRadius = f.shape === 'circle' ? '50%' : f.shape === 'rounded' ? rpx + 'px' : '0';
+                    const prow = curRow(), link = photoLink(prow);
+                    const im = document.createElement('img');
+                    im.style.cssText = `width:100%;height:100%;display:block;object-fit:${f.pfit === 'contain' ? 'contain' : 'cover'};object-position:50% ${f.pfit === 'contain' ? 50 : f.focus}%`;
+                    im.referrerPolicy = 'no-referrer';
+                    wrap.appendChild(im);
+                    if (link) setPreviewSrc(im, link, wrap, f);
+                    else if (!prow) { im.style.objectFit = 'cover'; im.src = SILHOUETTE; }          // no data yet: show sample
+                    else showSilhouette(im, wrap, f, 'no photo link');
+                    if (f.bw > 0) {
+                        const ov = document.createElement('div');
+                        ov.style.cssText = `position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 ${f.bw / 148 * H}px ${f.color}`;
+                        wrap.appendChild(ov);
+                    }
+                    box.appendChild(wrap);
                 } else {
                     // code field — show real preview
                     const src = codeSrc(f.key);
@@ -1445,7 +1787,11 @@
             else { f.w = Math.max(5, Math.min(98, dragInfo.ow + dx)); f.h = Math.max(3, Math.min(98, dragInfo.oh + dy)); }
             renderStage();
         }
-        function endDrag() { dragInfo = null; document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', endDrag); }
+        function endDrag() {
+            const wasResize = dragInfo && dragInfo.type === 'resize';
+            dragInfo = null; document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', endDrag);
+            if (wasResize) buildInspector();   // refresh sliders / proportion after a resize drag
+        }
 
         /* =========================================================================
            TOGGLES + INSPECTOR
@@ -1461,7 +1807,7 @@
                 const row = document.createElement('label');
                 row.innerHTML = `<input type="checkbox" ${f.on ? 'checked' : ''}>
       <span class="nm">${def.name}</span>
-      <span class="chip">${chip}</span>`;
+      <span class="chip">${esc(chip)}</span>`;
                 row.querySelector('input').onchange = e => { f.on = e.target.checked; if (f.on) selectField(f.key); renderStage(); buildToggles(); };
                 wrap.appendChild(row);
             });
@@ -1474,12 +1820,18 @@
             if (!f) { ins.innerHTML = '<div class="noedit">Click a field on the badge to edit its font, size, alignment & position.</div>'; return; }
             const def = FIELD_DEFS.find(d => d.key === f.key);
             const isText = def.type === 'text';
+            const isPhoto = def.type === 'photo';
+            let hint;
+            if (def.type === 'logo') hint = state.logoImg[state.side] ? 'This image is the same on every ' + state.side + ' badge. Drag on the canvas to reposition.' : 'Upload a custom image on the left panel first.';
+            else if (isPhoto) hint = `Reads the photo from column <b>${esc(state.map.photo || '(unmapped)')}</b>. Google Drive links are converted automatically — the Drive file or folder must be shared as <b>Anyone with the link</b>. Use <b>Crop focus</b> to keep faces in frame. For a true circle, choose the 1:1 proportion.`;
+            else hint = `This ${def.name} reads from column <b>${esc(state.map[f.key] || '(unmapped)')}</b>. Cells with an <code>https://</code> link draw that image; plain text/numbers are encoded into a ${f.key === 'qr' ? 'QR code' : 'Code128 barcode'} automatically.`;
+
             ins.innerHTML = `
     <h3>Editing <span class="editing-on">${def.name}</span></h3>
     ${isText ? `
     <label class="fld">Font family</label>
     <select id="iFont">${FONTS.map(fn => `<option ${f.font === fn ? 'selected' : ''}>${fn}</option>`).join('')}</select>
-    <label class="fld">Font size <span style="float:right;color:#fff">${f.size} pt</span></label>
+    <label class="fld">Font size <span id="iSizeV" style="float:right;color:#fff">${f.size} pt</span></label>
     <div class="rng"><input type="range" id="iSize" min="6" max="48" value="${f.size}"></div>
     <label class="fld">Weight</label>
     <select id="iWeight"><option value="400" ${f.weight == 400 ? 'selected' : ''}>Regular</option><option value="600" ${f.weight == 600 ? 'selected' : ''}>Semibold</option><option value="700" ${f.weight == 700 ? 'selected' : ''}>Bold</option><option value="800" ${f.weight == 800 ? 'selected' : ''}>Black</option></select>
@@ -1505,13 +1857,13 @@
     <label class="fld">Prefix (optional)</label>
     <input type="text" id="iPrefix" value="${f.prefix || ''}" placeholder="e.g. 'Dr '">
     `: `
-    <label class="fld">Width <span style="float:right;color:#fff">${Math.round(f.w)}%</span></label>
+    <label class="fld">Width <span id="iWV" style="float:right;color:#fff">${Math.round(f.w)}%</span></label>
     <div class="rng"><input type="range" id="iW" min="10" max="90" value="${f.w}"></div>
-    <label class="fld">Height <span style="float:right;color:#fff">${Math.round(f.h)}%</span></label>
-    <div class="rng"><input type="range" id="iH" min="6" max="80" value="${f.h}"></div>
-    ${def.type === 'logo'
-                    ? `<div class="hint">${state.logoImg[state.side] ? 'This image is the same on every ' + state.side + ' badge. Drag on the canvas to reposition.' : 'Upload a custom image on the left panel first.'}</div>`
-                    : `<div class="hint">This ${def.name} reads from column <b>${state.map[f.key] || '(unmapped)'}</b>. Cells with an <code>https://</code> link draw that image; plain text/numbers are encoded into a ${f.key === 'qr' ? 'QR code' : 'Code128 barcode'} automatically.</div>`}
+    <label class="fld">Height <span id="iHV" style="float:right;color:#fff">${Math.round(f.h)}%</span></label>
+    <div class="rng"><input type="range" id="iH" min="6" max="90" value="${f.h}"></div>
+    ${isPhoto ? ratioPresetHTML(f) : ''}
+    <div class="hint">${hint}</div>
+    ${isPhoto ? photoControlsHTML(f) : ''}
     `}
     <label class="fld">Position</label>
     <div class="rng">X<input type="range" id="iX" min="2" max="98" value="${f.x}"><span class="v">${Math.round(f.x)}</span></div>
@@ -1520,7 +1872,7 @@
             const reflect = () => { renderStage(); };
             if (isText) {
                 $('#iFont').onchange = e => { f.font = e.target.value; reflect(); };
-                $('#iSize').oninput = e => { f.size = +e.target.value; buildInspector(); reflect(); };
+                $('#iSize').oninput = e => { f.size = +e.target.value; $('#iSizeV').textContent = f.size + ' pt'; reflect(); };
                 $('#iWeight').onchange = e => { f.weight = +e.target.value; reflect(); };
                 $$('#iAlign button').forEach(b => b.onclick = () => { f.align = b.dataset.a; buildInspector(); reflect(); });
                 $$('#iColor .sw[data-c]').forEach(s => s.onclick = () => { f.color = s.dataset.c; buildInspector(); reflect(); });
@@ -1542,11 +1894,26 @@
                 $('#iUpper').onchange = e => { f.upper = e.target.checked; reflect(); };
                 $('#iPrefix').oninput = e => { f.prefix = e.target.value; reflect(); };
             } else {
-                $('#iW').oninput = e => { f.w = +e.target.value; buildInspector(); reflect(); };
-                $('#iH').oninput = e => { f.h = +e.target.value; buildInspector(); reflect(); };
+                $('#iW').oninput = e => { f.w = +e.target.value; $('#iWV').textContent = Math.round(f.w) + '%'; reflect(); };
+                $('#iH').oninput = e => { f.h = +e.target.value; $('#iHV').textContent = Math.round(f.h) + '%'; reflect(); };
+                $('#iW').onchange = $('#iH').onchange = () => { if (isPhoto) buildInspector(); };   // refresh proportion dropdown on release
+                if (isPhoto) {
+                    $('#iRatio').onchange = e => {
+                        const r = +e.target.value; if (!r) return;
+                        let h = f.w * A6.w / r / A6.h;
+                        if (h > 90) { h = 90; f.w = h * A6.h * r / A6.w; }
+                        f.h = h; buildInspector(); reflect();
+                    };
+                    $('#iShape').onchange = e => { f.shape = e.target.value; reflect(); };
+                    $('#iPFit').onchange = e => { f.pfit = e.target.value; reflect(); };
+                    $('#iFocus').oninput = e => { f.focus = +e.target.value; $('#iFocusV').textContent = f.focus + '%'; reflect(); };
+                    $('#iBW').oninput = e => { f.bw = +e.target.value; $('#iBWV').textContent = f.bw + ' mm'; reflect(); };
+                    $('#iBC').oninput = e => { f.color = e.target.value; reflect(); };
+                    $('#iPH').onchange = e => { f.ph = e.target.checked; reflect(); };
+                }
             }
-            $('#iX').oninput = e => { f.x = +e.target.value; buildInspector(); reflect(); };
-            $('#iY').oninput = e => { f.y = +e.target.value; buildInspector(); reflect(); };
+            $('#iX').oninput = e => { f.x = +e.target.value; e.target.nextElementSibling.textContent = Math.round(f.x); reflect(); };
+            $('#iY').oninput = e => { f.y = +e.target.value; e.target.nextElementSibling.textContent = Math.round(f.y); reflect(); };
         }
         // keep the hex box + preview swatch in sync while dragging the colour wheel
         function syncColorUI(hex) {
@@ -1598,10 +1965,14 @@
                 const r = new FileReader(); r.onload = ev => {
                     try {
                         const t = JSON.parse(ev.target.result);
-                        if (t.fields) state.fields = t.fields; if (t.map) Object.assign(state.map, t.map); if (t.paper) $('#paper').value = t.paper;
+                        // merge onto defaults so layouts saved before the Photo field still load
+                        if (t.fields) FIELD_DEFS.forEach(d => d.sides.forEach(s => {
+                            state.fields[s][d.key] = Object.assign(defaultField(d.key, s), (t.fields[s] || {})[d.key] || {});
+                        }));
+                        if (t.map) Object.assign(state.map, t.map); if (t.paper) $('#paper').value = t.paper;
                         if (t.fit) { state.fit = t.fit; $('#fitMode').value = t.fit; } if (t.logoImg) state.logoImg = t.logoImg;
                         refreshLogoDrop();
-                        renderStage(); buildToggles(); buildInspector(); if (state.headers.length) buildMapUI();
+                        renderStage(); buildToggles(); buildInspector(); if (state.headers.length) { buildMapUI(); updatePhotoStatus(); }
                         toast('Layout loaded', 'ok');
                     } catch (err) { toast('Bad layout file', 'err'); }
                 }; r.readAsText(e.target.files[0]);
@@ -1667,6 +2038,7 @@
         $('#exportBtn').onclick = () => startExport();
 
         async function startExport() {
+            if (!(await preflightPhotos())) return;   // warn if photos can't be read (e.g. Drive not shared)
             const paper = PAPERS[$('#paper').value];
             const bs = badgeSizeMM(paper);
             if (!bs.isA6) {
@@ -1713,6 +2085,7 @@
             const grid = bs.isA6 && bs.grid ? bs.grid : gridFor(paper, bs.w, bs.h);
             const cols = grid.cols, rows = grid.rows, perPage = cols * rows;
             restoreModal();
+            exportMissing = {}; _photoLRU.clear();
             const overlay = $('#overlay'); overlay.classList.add('show');
             const setBar = (p, msg) => { const b = $('#mBar'); if (b) b.style.width = p + '%'; const mm = $('#mMsg'); if (mm && msg) mm.textContent = msg; };
 
@@ -1726,6 +2099,12 @@
                 const sides = state.backImg ? ['front', 'back'] : ['front'];
 
                 async function placeSheet(side, startIdx) {
+                    // fetch this sheet's photos in parallel before drawing
+                    if (state.fields[side].photo && state.fields[side].photo.on) {
+                        const jobs = [];
+                        for (let i = 0; i < perPage && (startIdx + i) < N; i++) { const l = photoLink(state.rows[startIdx + i]); if (l) jobs.push(loadPhotoExport(l)); }
+                        await Promise.all(jobs);
+                    }
                     for (let i = 0; i < perPage && (startIdx + i) < N; i++) {
                         const idx = startIdx + i;
                         const col = i % cols, rowi = Math.floor(i / cols);
@@ -1760,6 +2139,12 @@
                 pdf.save(fname);
                 overlay.classList.remove('show');
                 toast(`PDF exported · ${cols}×${rows}=${perPage}/sheet · ${dpi} DPI · ${fname}`, 'ok');
+
+                const miss = Object.keys(exportMissing);
+                if (miss.length) {
+                    const usedPh = ['front', 'back'].some(s => state.fields[s].photo && state.fields[s].photo.on && state.fields[s].photo.ph !== false);
+                    showReport(`${miss.length} badge(s) missing a photo`, miss.map(i => `#${+i + 1} ${nameOf(+i)} — ${exportMissing[i]}`), usedPh);
+                }
             } catch (err) {
                 overlay.classList.remove('show');
                 toast('Export failed: ' + err.message, 'err');
@@ -1802,6 +2187,17 @@
                         let dw, dh; if (ar > br) { dw = bw; dh = bw / ar; } else { dh = bh; dw = bh * ar; }
                         ctx.drawImage(im, bx + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh);
                     } catch (e) { }
+                    continue;
+                }
+                if (def.type === 'photo') {
+                    const link = photoLink(row);
+                    const im = link ? await loadPhotoExport(link) : null;
+                    if (!im) {
+                        exportMissing[idx] = link ? "photo couldn't be loaded" : 'no photo link';
+                        if (f.ph !== false) drawPlaceholder(ctx, bx, by, bw, bh, f, H);
+                        continue;
+                    }
+                    drawPhoto(ctx, im, bx, by, bw, bh, f, H);
                     continue;
                 }
                 if (def.type === 'text') {
