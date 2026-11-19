@@ -1168,6 +1168,7 @@
             rows: [], headers: [],
             map: { name: '', photo: '', qr: '', barcode: '', inst: '', city: '', deltype: '', regtype: '', serial: '' },
             fields: { front: {}, back: {} },
+            photoAdj: {},                           // per-badge photo position: key "side|rowIndex" -> {z, ox, oy}
             side: 'front', sel: null, rec: 0, zoom: 'fit', src: 'upload',
             customCodes: {}, // rowIndex+key -> dataURL (custom uploads, future hook)
         };
@@ -1319,14 +1320,28 @@
             pathShape(ctx, x + bp / 2, y + bp / 2, w - bp, h - bp, f.shape);
             ctx.lineWidth = bp; ctx.strokeStyle = f.color; ctx.stroke();
         }
-        function drawPhoto(ctx, im, x, y, w, h, f, H) {
+        // Single source of truth for where a photo sits inside its frame (used by preview AND export).
+        // adj = {z: zoom (1 = default fit), ox/oy: pan as a fraction of the frame size}
+        function photoLayout(iw, ih, w, h, f, adj) {
+            const a = adj || { z: 1, ox: 0, oy: 0 };
+            const contain = f.pfit === 'contain';
+            const s = (contain ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih)) * (a.z || 1);
+            const dw = iw * s, dh = ih * s;
+            const cx = (w - dw) / 2;
+            const cy = contain ? (h - dh) / 2 : (h - dh) * (f.focus / 100);
+            let dx = cx + (a.ox || 0) * w, dy = cy + (a.oy || 0) * h;
+            if (!contain) { dx = Math.min(0, Math.max(w - dw, dx)); dy = Math.min(0, Math.max(h - dh, dy)); } // never leave a gap in the frame
+            return { dx, dy, dw, dh, ox: (dx - cx) / w, oy: (dy - cy) / h };
+        }
+        function drawPhoto(ctx, im, x, y, w, h, f, H, adj) {
             ctx.save(); pathShape(ctx, x, y, w, h, f.shape); ctx.clip();
-            const iw = im.naturalWidth, ih = im.naturalHeight; let s, dw, dh, dx, dy;
-            if (f.pfit === 'contain') { s = Math.min(w / iw, h / ih); dw = iw * s; dh = ih * s; dx = x + (w - dw) / 2; dy = y + (h - dh) / 2; }
-            else { s = Math.max(w / iw, h / ih); dw = iw * s; dh = ih * s; dx = x + (w - dw) / 2; dy = y + (h - dh) * (f.focus / 100); }
-            ctx.drawImage(im, dx, dy, dw, dh); ctx.restore();
+            const L = photoLayout(im.naturalWidth, im.naturalHeight, w, h, f, adj);
+            ctx.drawImage(im, x + L.dx, y + L.dy, L.dw, L.dh); ctx.restore();
             drawBorder(ctx, x, y, w, h, f, H);
         }
+        function photoAdjKey(side, idx) { return side + '|' + idx; }
+        function getPhotoAdj() { return state.photoAdj[photoAdjKey(state.side, state.rec)] || { z: 1, ox: 0, oy: 0 }; }
+        function setPhotoAdj(a) { state.photoAdj[photoAdjKey(state.side, state.rec)] = a; }
         // grey silhouette used when a photo is missing / can't be loaded
         function drawPlaceholder(ctx, x, y, w, h, f, H) {
             ctx.save(); pathShape(ctx, x, y, w, h, f.shape); ctx.clip();
@@ -1348,6 +1363,7 @@
     <select id="iRatio">${P.map(([v, l]) => `<option value="${v}" ${(cur ? cur[0] : '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
         }
         function photoControlsHTML(f) {
+            const pa = getPhotoAdj();
             return `
     <label class="fld">Shape</label>
     <select id="iShape">${[['rect', 'Rectangle'], ['rounded', 'Rounded corners'], ['circle', 'Circle / oval']].map(([v, l]) => `<option value="${v}" ${f.shape === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -1361,7 +1377,15 @@
     <input type="color" id="iBC" value="${toHex6(f.color)}" style="width:100%;height:34px;border:1px solid var(--line2);border-radius:8px;background:#13151a;padding:2px;cursor:pointer">
     <label style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer;margin-top:12px">
       <input type="checkbox" id="iPH" ${f.ph !== false ? 'checked' : ''} style="accent-color:var(--accent2)"> Grey silhouette if photo is missing
-    </label>`;
+    </label>
+    <div class="hint" style="margin-top:14px"><b>This badge only:</b> drag the photo on the badge to reposition it (Shift+drag moves the frame). Other badges are not affected.</div>
+    <label class="fld">Zoom <span id="iPZV" style="float:right;color:#fff">${Math.round(pa.z * 100)}%</span></label>
+    <div class="rng"><input type="range" id="iPZ" min="100" max="300" value="${Math.round(pa.z * 100)}"></div>
+    <label class="fld">Move left / right <span id="iPXV" style="float:right;color:#fff">${Math.round(pa.ox * 100)}%</span></label>
+    <div class="rng"><input type="range" id="iPX" min="-100" max="100" value="${Math.round(pa.ox * 100)}"></div>
+    <label class="fld">Move up / down <span id="iPYV" style="float:right;color:#fff">${Math.round(pa.oy * 100)}%</span></label>
+    <div class="rng"><input type="range" id="iPY" min="-100" max="100" value="${Math.round(pa.oy * 100)}"></div>
+    <button class="btn" id="iPReset" style="width:100%;margin-top:8px">Reset this badge's photo</button>`;
         }
 
         /* ---- dialogs ---- */
@@ -1572,7 +1596,7 @@
                 Object.defineProperty(o, '__links', { value: lk, enumerable: false });
                 state.rows.push(o);
             }
-            state.rec = 0;
+            state.rec = 0; state.photoAdj = {};
             autoMap(); buildMapUI(); $('#mapSec').classList.remove('hidden');
             const hasDrive = updatePhotoStatus();
             buildToggles(); renderStage(); updateRecNav(); checkReady();
@@ -1733,7 +1757,14 @@
                     wrap.style.borderRadius = f.shape === 'circle' ? '50%' : f.shape === 'rounded' ? rpx + 'px' : '0';
                     const prow = curRow(), link = photoLink(prow);
                     const im = document.createElement('img');
-                    im.style.cssText = `width:100%;height:100%;display:block;object-fit:${f.pfit === 'contain' ? 'contain' : 'cover'};object-position:50% ${f.pfit === 'contain' ? 50 : f.focus}%`;
+                    const pa = getPhotoAdj(), pbw = f.w / 100 * W, pbh = f.h / 100 * H;
+                    im.style.cssText = 'position:absolute;display:block;max-width:none;max-height:none';
+                    im.addEventListener('load', () => {
+                        if (!im.naturalWidth) return;
+                        const L = photoLayout(im.naturalWidth, im.naturalHeight, pbw, pbh, f, pa);
+                        im.style.left = L.dx + 'px'; im.style.top = L.dy + 'px';
+                        im.style.width = L.dw + 'px'; im.style.height = L.dh + 'px';
+                    });
                     im.referrerPolicy = 'no-referrer';
                     wrap.appendChild(im);
                     if (link) setPreviewSrc(im, link, wrap, f);
@@ -1755,7 +1786,14 @@
                     const h = document.createElement('div'); h.className = 'handle'; box.appendChild(h);
                     h.addEventListener('mousedown', e => startResize(e, f));
                 }
-                box.addEventListener('mousedown', e => { if (e.target.classList.contains('handle')) return; selectField(f.key); startDrag(e, f); });
+                box.addEventListener('mousedown', e => {
+                    if (e.target.classList.contains('handle')) return;
+                    if (def.type === 'photo' && !e.shiftKey) {
+                        const pim = box.querySelector('img');
+                        if (pim && pim.naturalWidth) { const r = box.getBoundingClientRect(); selectField(f.key); startPan(e, f, pim, r); return; }
+                    }
+                    selectField(f.key); startDrag(e, f);
+                });
                 stage.appendChild(box);
             });
         }
@@ -1774,6 +1812,15 @@
             dragInfo = { f, type: 'move', sx: e.clientX, sy: e.clientY, ox: f.x, oy: f.y, sw: stage.width, sh: stage.height };
             document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', endDrag);
         }
+        function startPan(e, f, im, r) {
+            e.preventDefault();
+            const adj = { ...getPhotoAdj() };
+            setPhotoAdj(adj);
+            const L = photoLayout(im.naturalWidth, im.naturalHeight, r.width, r.height, f, adj);
+            adj.ox = L.ox; adj.oy = L.oy;
+            dragInfo = { f, type: 'pan', adj, im, bw: r.width, bh: r.height, sx: e.clientX, sy: e.clientY, ox0: adj.ox, oy0: adj.oy };
+            document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', endDrag);
+        }
         function startResize(e, f) {
             e.preventDefault(); e.stopPropagation();
             const stage = $('#stage').getBoundingClientRect();
@@ -1781,14 +1828,22 @@
             document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', endDrag);
         }
         function onDrag(e) {
-            if (!dragInfo) return; const { f, type, sx, sy, sw, sh } = dragInfo;
+            if (!dragInfo) return;
+            if (dragInfo.type === 'pan') {
+                const d = dragInfo, a = d.adj;
+                a.ox = d.ox0 + (e.clientX - d.sx) / d.bw; a.oy = d.oy0 + (e.clientY - d.sy) / d.bh;
+                const L = photoLayout(d.im.naturalWidth, d.im.naturalHeight, d.bw, d.bh, d.f, a);
+                a.ox = L.ox; a.oy = L.oy;
+                renderStage(); return;
+            }
+            const { f, type, sx, sy, sw, sh } = dragInfo;
             const dx = (e.clientX - sx) / sw * 100, dy = (e.clientY - sy) / sh * 100;
             if (type === 'move') { f.x = Math.max(2, Math.min(98, dragInfo.ox + dx)); f.y = Math.max(2, Math.min(98, dragInfo.oy + dy)); }
             else { f.w = Math.max(5, Math.min(98, dragInfo.ow + dx)); f.h = Math.max(3, Math.min(98, dragInfo.oh + dy)); }
             renderStage();
         }
         function endDrag() {
-            const wasResize = dragInfo && dragInfo.type === 'resize';
+            const wasResize = dragInfo && (dragInfo.type === 'resize' || dragInfo.type === 'pan');
             dragInfo = null; document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', endDrag);
             if (wasResize) buildInspector();   // refresh sliders / proportion after a resize drag
         }
@@ -1910,6 +1965,10 @@
                     $('#iBW').oninput = e => { f.bw = +e.target.value; $('#iBWV').textContent = f.bw + ' mm'; reflect(); };
                     $('#iBC').oninput = e => { f.color = e.target.value; reflect(); };
                     $('#iPH').onchange = e => { f.ph = e.target.checked; reflect(); };
+                    $('#iPZ').oninput = e => { setPhotoAdj({ ...getPhotoAdj(), z: +e.target.value / 100 }); $('#iPZV').textContent = e.target.value + '%'; renderStage(); };
+                    $('#iPX').oninput = e => { setPhotoAdj({ ...getPhotoAdj(), ox: +e.target.value / 100 }); $('#iPXV').textContent = e.target.value + '%'; renderStage(); };
+                    $('#iPY').oninput = e => { setPhotoAdj({ ...getPhotoAdj(), oy: +e.target.value / 100 }); $('#iPYV').textContent = e.target.value + '%'; renderStage(); };
+                    $('#iPReset').onclick = () => { delete state.photoAdj[photoAdjKey(state.side, state.rec)]; buildInspector(); renderStage(); };
                 }
             }
             $('#iX').oninput = e => { f.x = +e.target.value; e.target.nextElementSibling.textContent = Math.round(f.x); reflect(); };
@@ -1942,8 +2001,8 @@
         $('#zIn').onclick = () => { let z = state.zoom === 'fit' ? .5 : state.zoom; state.zoom = Math.min(1.4, z + .12); renderStage(); };
         $('#zOut').onclick = () => { let z = state.zoom === 'fit' ? .5 : state.zoom; state.zoom = Math.max(.18, z - .12); renderStage(); };
         $('#zVal').onclick = () => { state.zoom = 'fit'; renderStage(); };
-        $('#prevRec').onclick = () => { if (!state.rows.length) return; state.rec = (state.rec - 1 + state.rows.length) % state.rows.length; renderStage(); updateRecNav(); };
-        $('#nextRec').onclick = () => { if (!state.rows.length) return; state.rec = (state.rec + 1) % state.rows.length; renderStage(); updateRecNav(); };
+        $('#prevRec').onclick = () => { if (!state.rows.length) return; state.rec = (state.rec - 1 + state.rows.length) % state.rows.length; renderStage(); updateRecNav(); if (state.sel) buildInspector(); };
+        $('#nextRec').onclick = () => { if (!state.rows.length) return; state.rec = (state.rec + 1) % state.rows.length; renderStage(); updateRecNav(); if (state.sel) buildInspector(); };
         function updateRecNav() {
             if (!state.rows.length) { $('#recWho').textContent = 'No data loaded'; return; }
             const nm = state.map.name ? curRow()[state.map.name] : '';
@@ -2197,7 +2256,7 @@
                         if (f.ph !== false) drawPlaceholder(ctx, bx, by, bw, bh, f, H);
                         continue;
                     }
-                    drawPhoto(ctx, im, bx, by, bw, bh, f, H);
+                    drawPhoto(ctx, im, bx, by, bw, bh, f, H, state.photoAdj[photoAdjKey(side, idx)]);
                     continue;
                 }
                 if (def.type === 'text') {
